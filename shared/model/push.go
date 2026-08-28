@@ -1,9 +1,12 @@
 package model
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 // Bundle is what the panel mints when an operator creates a node and what the
@@ -27,16 +30,34 @@ type Bundle struct {
 }
 
 // Encode renders the bundle as the single base64 blob the operator pastes.
+// The JSON is gzipped first: it's mostly three PEM certificates (low-entropy,
+// repeated base64 alphabet and identical headers), so gzip roughly halves the
+// blob — the pasted install command shrinks accordingly.
 func (b Bundle) Encode() string {
 	raw, _ := json.Marshal(b)
-	return base64.StdEncoding.EncodeToString(raw)
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write(raw)
+	_ = zw.Close()
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-// DecodeBundle parses the pasted blob.
+// DecodeBundle parses the pasted blob. It accepts both the gzipped form and the
+// older plain-JSON form (gzip magic 0x1f8b tells them apart), so nodes carrying
+// a pre-gzip bundle keep decoding after an image update.
 func DecodeBundle(s string) (*Bundle, error) {
 	raw, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
 		return nil, fmt.Errorf("bundle is not valid base64: %w", err)
+	}
+	if len(raw) >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
+		zr, err := gzip.NewReader(bytes.NewReader(raw))
+		if err != nil {
+			return nil, fmt.Errorf("bundle gzip header: %w", err)
+		}
+		if raw, err = io.ReadAll(zr); err != nil {
+			return nil, fmt.Errorf("bundle gzip body: %w", err)
+		}
 	}
 	var b Bundle
 	if err := json.Unmarshal(raw, &b); err != nil {
