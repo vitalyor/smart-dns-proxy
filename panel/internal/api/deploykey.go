@@ -68,8 +68,14 @@ func (s *Server) provisionDeployKey(ctx context.Context, nodeName string) (privP
 
 // deployInstallCommand is the self-contained command shown in the UI: write the
 // read-only key, clone the private repo with it, then run the installer.
+//
+// The whole body runs inside `sudo bash -s <<'…'`, i.e. a child shell, so the
+// `set -e` and `cd` inside can never touch the operator's interactive session —
+// pasting the command straight into a terminal is safe. Prompts (Docker, sudo)
+// still work because the installer reads them from /dev/tty, not stdin.
 func deployInstallCommand(repo, role, bundle, privPEM string) string {
-	return fmt.Sprintf(`set -e
+	return fmt.Sprintf(`sudo bash -s <<'SMARTDNS_INSTALL'
+set -e
 umask 077
 install -d -m 700 /etc/smartdns
 cat > /etc/smartdns/deploy_key <<'SMARTDNS_KEY'
@@ -78,7 +84,8 @@ chmod 600 /etc/smartdns/deploy_key
 GIT_SSH_COMMAND='ssh -i /etc/smartdns/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' \
   git clone --depth 1 git@github.com:%s.git /opt/smartdns-src
 cd /opt/smartdns-src
-sudo bash install.sh --role %s --bundle %s`, privPEM, repo, role, bundle)
+bash install.sh --role %s --bundle %s
+SMARTDNS_INSTALL`, privPEM, repo, role, bundle)
 }
 
 func githubAddDeployKey(ctx context.Context, token, repo, title, pubKey string) (int64, error) {
