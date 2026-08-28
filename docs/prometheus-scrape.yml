@@ -1,0 +1,35 @@
+# Пример конфигурации Prometheus. Эндпоинты /metrics не аутентифицированы —
+# ограничьте доступ к ним межсетевым экраном или приватной сетью.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: smartdns-panel
+    static_configs:
+      - targets: ["panel.example.net:8080"]
+        labels: {component: panel}
+
+  - job_name: smartdns-ingress
+    static_configs:
+      - targets:
+          - "ingress-01.example.net:9101"   # dns-frontend
+          - "ingress-01.example.net:9102"   # sni-proxy
+          - "ingress-01.example.net:9104"   # node-agent
+        labels: {role: ingress, node: ingress-01}
+
+  - job_name: smartdns-egress
+    static_configs:
+      - targets:
+          - "egress-de-01.example.net:9103" # egress-relay
+          - "egress-de-01.example.net:9104" # node-agent
+        labels: {role: egress, node: egress-de-01}
+
+  # Для оповещения о возрасте резервной копии: textfile-коллектор node_exporter,
+  # направленный на каталог копий (см. docs/alerts.yml).
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["panel.example.net:9100"]

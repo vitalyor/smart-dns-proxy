@@ -1,0 +1,69 @@
+# Egress node: agent + relay. The relay accepts only ingress peers holding a
+# certificate from the panel CA and only destinations in the active revision.
+name: smartdns-egress
+
+x-logging: &logging
+  # Docker's json-file driver keeps logs forever unless told otherwise; without
+  # this a chatty container eventually fills the disk. 3 x 10 MiB per service.
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-3}"
+
+x-node-image: &node-image
+  image: smartdns/node:${SMARTDNS_VERSION:-2.0.0}
+  build:
+    context: ../../..
+    dockerfile: node/deploy/Dockerfile
+    args:
+      VERSION: ${SMARTDNS_VERSION:-2.0.0}
+  restart: unless-stopped
+  logging: *logging
+  read_only: true
+  tmpfs: ["/tmp"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  environment: &node-env
+    SMARTDNS_CONFIG: /var/lib/smartdns-agent/active/config.json
+    SMARTDNS_IDENTITY: /var/lib/smartdns-agent/identity
+    TZ: ${TZ:-Europe/Moscow}
+    LOG_LEVEL: ${LOG_LEVEL:-}
+
+services:
+  node-agent:
+    <<: *node-image
+    entrypoint: ["/usr/local/bin/node-agent"]
+    environment:
+      <<: *node-env
+      NODE_ROLE: egress
+      NODE_BUNDLE: ${NODE_BUNDLE:?NODE_BUNDLE is required — copy it from the panel}
+      MGMT_ADDR: ":3333"
+      METRICS_ADDR: 0.0.0.0:9104
+    ports:
+      # The panel connects here. Open ONLY to the panel IP in the firewall.
+      - "${MGMT_BIND:-3333}:3333"
+    volumes:
+      - agentstate:/var/lib/smartdns-agent
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9104/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  egress-relay:
+    <<: *node-image
+    depends_on:
+      node-agent: {condition: service_healthy}
+    entrypoint: ["/usr/local/bin/egress-relay"]
+    environment:
+      <<: *node-env
+      RELAY_ADDR: ":8443"
+      METRICS_ADDR: 0.0.0.0:9103
+    volumes:
+      - agentstate:/var/lib/smartdns-agent:ro
+    ports:
+      - "${RELAY_BIND:-0.0.0.0}:${RELAY_PORT:-8443}:8443/tcp"
+
+volumes:
+  agentstate:

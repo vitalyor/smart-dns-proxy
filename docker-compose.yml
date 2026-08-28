@@ -1,0 +1,125 @@
+# Control plane stack. PostgreSQL is never published outside this network.
+name: smartdns-panel
+
+x-logging: &logging
+  # Docker's json-file driver keeps logs forever unless told otherwise; without
+  # this a chatty container eventually fills the disk. 3 x 10 MiB per service.
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-3}"
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smartdns}
+      POSTGRES_USER: ${POSTGRES_USER:-smartdns}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Readiness, not just "the process exists".
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartdns} -d ${POSTGRES_DB:-smartdns} && psql -U ${POSTGRES_USER:-smartdns} -d ${POSTGRES_DB:-smartdns} -c 'SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt: ["no-new-privileges:true"]
+
+  panel-api:
+    build:
+      context: .
+      dockerfile: deploy/panel/Dockerfile
+      args:
+        VERSION: ${SMARTDNS_VERSION:-2.0.0}
+    image: smartdns/panel-api:${SMARTDNS_VERSION:-2.0.0}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-smartdns}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartdns}?sslmode=disable
+      PANEL_SECRET_KEY: ${PANEL_SECRET_KEY:?PANEL_SECRET_KEY is required}
+      PANEL_PUBLIC_URL: ${PANEL_PUBLIC_URL:-http://localhost:8080}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      LAB_MODE: ${LAB_MODE:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - panelstate:/var/lib/smartdns-panel
+    ports:
+      - "${PANEL_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  backup:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-smartdns}
+      PGDATABASE: ${POSTGRES_DB:-smartdns}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_INTERVAL_SEC: ${BACKUP_INTERVAL_SEC:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      # Same passphrase as scripts/backup.sh. If empty, the CA private key is
+      # written to disk in the clear — set it in .env to encrypt at rest.
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+      - panelstate:/var/lib/smartdns-panel:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      # One self-contained artifact per run, in the exact shape scripts/restore.sh
+      # reads: smartdns-<ts>.tar holding db-<ts>.dump + panelstate-<ts>.tar, so an
+      # automatic backup restores with no format juggling. Optionally encrypted.
+      - |
+        [ -n "$$BACKUP_PASSPHRASE" ] && { command -v openssl >/dev/null || apk add --no-cache openssl >/dev/null 2>&1 || true; }
+        while true; do
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          work=$$(mktemp -d)
+          if pg_dump -Fc -f "$$work/db-$$ts.dump" && tar -cf "$$work/panelstate-$$ts.tar" -C /var/lib/smartdns-panel .; then
+            tar -cf "$$work/smartdns-$$ts.tar" -C "$$work" "db-$$ts.dump" "panelstate-$$ts.tar"
+            if [ -n "$$BACKUP_PASSPHRASE" ] && command -v openssl >/dev/null; then
+              openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$$work/smartdns-$$ts.tar" -out "/backups/smartdns-$$ts.tar.enc" -pass env:BACKUP_PASSPHRASE
+              f=/backups/smartdns-$$ts.tar.enc
+            else
+              cp "$$work/smartdns-$$ts.tar" "/backups/smartdns-$$ts.tar"; f=/backups/smartdns-$$ts.tar
+            fi
+            sha256sum "$$f" > "$$f.sha256"
+            printf '# HELP smartdns_backup_last_success_seconds Unix time of the last successful backup\n# TYPE smartdns_backup_last_success_seconds gauge\nsmartdns_backup_last_success_seconds %s\n' "$$(date -u +%s)" > /backups/backup.prom
+            echo "{\"event\":\"backup_ok\",\"file\":\"$$f\"}"
+          else
+            echo "{\"event\":\"backup_failed\"}" >&2
+          fi
+          rm -rf "$$work"
+          find /backups -name 'smartdns-*.tar' -mtime +$$BACKUP_RETENTION_DAYS -delete
+          find /backups -name 'smartdns-*.tar.enc' -mtime +$$BACKUP_RETENTION_DAYS -delete
+          find /backups -name 'smartdns-*.sha256' -mtime +$$BACKUP_RETENTION_DAYS -delete
+          sleep $$BACKUP_INTERVAL_SEC
+        done
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  pgdata:
+  panelstate:
+
+secrets:
+  postgres_password:
+    environment: POSTGRES_PASSWORD

@@ -1,0 +1,117 @@
+# Ingress node: DNS frontend + Unbound + SNI proxy + agent.
+# The agent owns the state volume; the data plane mounts it read-only and
+# reloads the active artifact by itself — no Docker socket anywhere.
+name: smartdns-ingress
+
+x-logging: &logging
+  # Docker's json-file driver keeps logs forever unless told otherwise; without
+  # this a chatty container eventually fills the disk. 3 x 10 MiB per service.
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-3}"
+
+x-node-image: &node-image
+  image: smartdns/node:${SMARTDNS_VERSION:-2.0.0}
+  build:
+    context: ../../..
+    dockerfile: node/deploy/Dockerfile
+    args:
+      VERSION: ${SMARTDNS_VERSION:-2.0.0}
+  restart: unless-stopped
+  logging: *logging
+  read_only: true
+  tmpfs: ["/tmp"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  environment: &node-env
+    SMARTDNS_CONFIG: /var/lib/smartdns-agent/active/config.json
+    SMARTDNS_IDENTITY: /var/lib/smartdns-agent/identity
+    TZ: ${TZ:-Europe/Moscow}
+    LOG_LEVEL: ${LOG_LEVEL:-}
+
+services:
+  node-agent:
+    <<: *node-image
+    entrypoint: ["/usr/local/bin/node-agent"]
+    environment:
+      <<: *node-env
+      NODE_ROLE: ingress
+      # The bundle from the panel (Ноды → Добавить ноду). Provisions once, then
+      # ignored, so it is safe to leave set.
+      NODE_BUNDLE: ${NODE_BUNDLE:?NODE_BUNDLE is required — copy it from the panel}
+      MGMT_ADDR: ":3333"
+      METRICS_ADDR: 0.0.0.0:9104
+    ports:
+      # The panel connects here. Open ONLY to the panel IP in the firewall.
+      - "${MGMT_BIND:-3333}:3333"
+    volumes:
+      - agentstate:/var/lib/smartdns-agent
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9104/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  unbound:
+    image: smartdns/unbound:${SMARTDNS_VERSION:-2.0.0}
+    build:
+      context: ../../..
+      dockerfile: node/deploy/unbound/Dockerfile
+    restart: unless-stopped
+    logging: *logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "drill", "-Q", "@127.0.0.1", "nlnetlabs.nl", "A"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  dns-frontend:
+    <<: *node-image
+    depends_on:
+      node-agent: {condition: service_healthy}
+      unbound: {condition: service_started}
+    entrypoint: ["/usr/local/bin/dns-frontend"]
+    environment:
+      <<: *node-env
+      DNS_UDP_ADDR: ":53"
+      DNS_TCP_ADDR: ":53"
+      DNS_DOT_ADDR: ":853"
+      DNS_DOH_ADDR: ":8443"
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-}
+      ALLOW_SELF_SIGNED_TLS: ${ALLOW_SELF_SIGNED_TLS:-0}
+      METRICS_ADDR: 0.0.0.0:9101
+    cap_add: [NET_BIND_SERVICE]
+    volumes:
+      - agentstate:/var/lib/smartdns-agent:ro
+      - ${TLS_DIR:-./tls}:/etc/smartdns/tls:ro
+    ports:
+      - "${DNS_IP:-0.0.0.0}:53:53/udp"
+      - "${DNS_IP:-0.0.0.0}:53:53/tcp"
+      - "${DNS_IP:-0.0.0.0}:853:853/tcp"
+      - "${DNS_IP:-0.0.0.0}:${DOH_PORT:-8443}:8443/tcp"
+
+  sni-proxy:
+    <<: *node-image
+    depends_on:
+      node-agent: {condition: service_healthy}
+    entrypoint: ["/usr/local/bin/sni-proxy"]
+    environment:
+      <<: *node-env
+      PROXY_ADDR: ":443"
+      METRICS_ADDR: 0.0.0.0:9102
+    cap_add: [NET_BIND_SERVICE]
+    volumes:
+      - agentstate:/var/lib/smartdns-agent:ro
+    ports:
+      # Recommended production layout is a second public IP for the proxy so
+      # DoH on TCP/443 and managed HTTPS never contend for the same socket.
+      - "${PROXY_IP:-0.0.0.0}:443:443/tcp"
+
+volumes:
+  agentstate:

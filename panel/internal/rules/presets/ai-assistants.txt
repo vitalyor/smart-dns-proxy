@@ -1,0 +1,20 @@
+# Built-in preset: AI assistants (ChatGPT, Gemini, Claude) and their direct
+# API / auth / asset dependencies. Deliberately narrow: broad suffixes such as
+# google.com would divert unrelated traffic and break local CDN routing.
+domain:chat.openai.com
+domain:chatgpt.com
+domain:api.openai.com
+domain:auth0.openai.com
+domain:auth.openai.com
+domain:cdn.oaistatic.com
+domain:oaiusercontent.com
+domain:files.oaiusercontent.com
+domain:ab.chatgpt.com
+domain:gemini.google.com
+domain:aistudio.google.com
+domain:generativelanguage.googleapis.com
+domain:alkalimakersuite-pa.clients6.google.com
+domain:claude.ai
+domain:api.anthropic.com
+domain:console.anthropic.com
+domain:cdn.usefathom.com

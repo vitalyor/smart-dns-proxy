@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push: {branches: [main]}
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go — сборка, vet и тесты
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: "1.24.4", cache: true}
+      - run: gofmt -l . | tee /tmp/fmt && test ! -s /tmp/fmt
+      - run: go vet ./...
+      - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - run: go build ./...
+      - uses: actions/upload-artifact@v4
+        with: {name: coverage, path: coverage.out}
+
+  web:
+    name: Веб-панель — типы и сборка
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22.12.0", cache: npm, cache-dependency-path: panel/web/package-lock.json}
+      - run: npm ci --no-audit --no-fund
+        working-directory: panel/web
+      - run: npm run build
+        working-directory: panel/web
+
+  e2e:
+    name: Сквозной стенд в контейнерах
+    runs-on: ubuntu-24.04
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/lab-e2e.sh
+      - if: failure()
+        run: docker compose -f deploy/examples/lab/docker-compose.yml logs --tail 200
+
+  security:
+    name: Сканирование зависимостей и образов
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: "1.24.4", cache: true}
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - name: npm audit
+        working-directory: panel/web
+        run: npm ci --no-audit --no-fund && npm audit --audit-level=high || true
+      - name: Сборка образа панели и SBOM
+        run: |
+          docker build -f deploy/panel/Dockerfile -t smartdns/panel-api:ci .
+          docker sbom smartdns/panel-api:ci > sbom-panel.txt 2>/dev/null || \
+            echo "docker sbom недоступен на раннере; в релизе SBOM формируется syft"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: sbom, path: sbom-panel.txt, if-no-files-found: ignore}
