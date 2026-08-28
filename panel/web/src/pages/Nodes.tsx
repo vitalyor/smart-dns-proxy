@@ -125,16 +125,22 @@ export default function Nodes() {
         <Modal title="Команда установки ноды" onClose={() => setIssued(null)} wide
           footer={<button className="btn primary" onClick={() => setIssued(null)}>Готово</button>}>
           <Notice kind="warn" title="Бандл показывается один раз">
-            Скопируйте команду сейчас. Бандл несёт TLS-идентичность ноды и пин панели;
-            в базе он не хранится. Потеряли — удалите ноду и создайте заново.
+            Бандл несёт TLS-идентичность ноды и пин панели; в базе он не хранится.
+            Потеряли — удалите ноду и создайте заново.
           </Notice>
+
+          <div className="eyebrow" style={{ marginTop: 4 }}>Шаг 1 — запустите на сервере</div>
           <div className="codeblock">{issued.install_command}</div>
-          <div className="row">
-            <Copyable value={issued.install_command} label="Копировать команду" />
-          </div>
-          <p className="small muted" style={{ margin: 0 }}>
-            Нода поднимется сервером на порту 3333 и будет ждать панель — наружу не звонит.
-            Откройте 3333 фаерволом только для IP панели.
+          <Copyable value={issued.install_command} label="Копировать команду" />
+
+          <div className="eyebrow" style={{ marginTop: 18 }}>Шаг 2 — вставьте бандл, когда установщик попросит</div>
+          <div className="codeblock" style={{ maxHeight: 160, overflow: "auto", wordBreak: "break-all" }}>{issued.bundle}</div>
+          <Copyable value={issued.bundle} label="Копировать бандл" />
+
+          <p className="small muted" style={{ margin: "14px 0 0" }}>
+            Секрет вводится по запросу — он не попадёт в историю команд.
+            Нода поднимется сервером на порту 3333 и будет ждать панель (наружу не звонит) —
+            откройте 3333 фаерволом только для IP панели.
           </p>
         </Modal>
       )}
