@@ -1,0 +1,4 @@
+# Built-in preset: a small demonstration list used by the quick-start wizard.
+# Replace it with a real, maintained source before production use.
+domain:example.com
+domain:example.net

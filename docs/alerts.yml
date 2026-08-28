@@ -1,0 +1,93 @@
+# Правила оповещений Prometheus. Пороги соответствуют разделу 22.3 ТЗ.
+groups:
+  - name: smartdns
+    rules:
+      - alert: NodeHeartbeatStale
+        expr: time() - smartdns_agent_last_heartbeat_seconds > 60
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Нода {{ $labels.node }} молчит дольше 60 секунд"
+          description: "Data plane работает на last-known-good. Проверьте связь агента с панелью."
+          runbook: "docs/RUNBOOKS.md#панель-недоступна"
+
+      - alert: RevisionDrift
+        expr: smartdns_panel_nodes_with_drift > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Ноды не применили назначенную ревизию дольше 10 минут"
+          runbook: "docs/RUNBOOKS.md#ревизия-не-применяется"
+
+      - alert: AllEgressUnavailable
+        expr: sum by (service) (smartdns_egress_healthy) == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "У сервиса {{ $labels.service }} нет ни одной живой egress-ноды"
+          runbook: "docs/RUNBOOKS.md#egress-не-доходит-до-origin"
+
+      - alert: RuleFetchStale
+        expr: time() - smartdns_rule_set_last_fetch_seconds > 2 * smartdns_rule_set_interval_seconds
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Набор правил {{ $labels.rule_set }} не обновлялся дольше двух интервалов"
+          description: "Активный список не изменился — это ожидаемое поведение при недоступности источника."
+
+      - alert: CertificateExpiringSoon
+        expr: smartdns_node_certificate_expiry_seconds < 14 * 86400
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "Сертификат ноды {{ $labels.node }} истекает менее чем через 14 дней"
+
+      - alert: DiskFilling
+        expr: (1 - node_filesystem_avail_bytes / node_filesystem_size_bytes) > 0.80
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Диск заполнен больше чем на 80%"
+          runbook: "docs/RUNBOOKS.md#диск-заполнен"
+
+      - alert: DiskCritical
+        expr: (1 - node_filesystem_avail_bytes / node_filesystem_size_bytes) > 0.90
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Диск заполнен больше чем на 90%: новые ревизии приниматься не будут"
+
+      - alert: DNSRejectionSpike
+        expr: rate(smartdns_dns_rejected_total[5m]) > 50
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Всплеск отказов DNS ({{ $labels.reason }})"
+          description: "reason=acl или rate_limit при неизменной конфигурации обычно означает сканирование."
+
+      - alert: OpenProxyProbing
+        expr: rate(smartdns_ingress_rejected_total{reason="sni_not_managed"}[5m]) > 10
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: "Адрес ingress сканируют в поисках открытого прокси"
+          description: "Отказ штатный. Тревога информационная: убедитесь, что список правил не сужен по ошибке."
+
+      - alert: RestartLoop
+        expr: increase(smartdns_agent_apply_failures_total[10m]) >= 3
+        labels: {severity: critical}
+        annotations:
+          summary: "Нода {{ $labels.node }} трижды не смогла применить ревизию"
+          description: "Нода в состоянии degraded, работает last-known-good. Выкатите новую ревизию."
+          runbook: "docs/RUNBOOKS.md#ревизия-не-применяется"
+
+      # Публикуется контейнером backup в файл /backups/backup.prom.
+      # Направьте на этот каталог textfile-коллектор node_exporter:
+      #   --collector.textfile.directory=/var/backups/smartdns
+      - alert: BackupTooOld
+        expr: time() - smartdns_backup_last_success_seconds > 36 * 3600
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "Резервная копия старше 36 часов при RPO 24 часа"
+          runbook: "OPERATIONS.md#резервное-копирование"

@@ -1,0 +1,17 @@
+/bin/
+*.env
+.env
+!.env.example
+node_modules/
+panel/web/dist/
+/data/
+*.pem
+*.key
+!tests/**/*.pem
+# Резервные копии панели: дампы базы и ПРИВАТНЫЙ ключ CA — никогда в репозиторий.
+/backups/
+*.dump
+*.tar.enc
+# Локальные артефакты сборки и рабочие документы (содержат реальные IP).
+*.tsbuildinfo
+/LAUNCH-PLAN.html

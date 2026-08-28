@@ -1,0 +1,232 @@
+# Full container lab: panel + one ingress node + one egress node + test doubles.
+# Everything runs on one host with fixed addresses so the e2e script can assert
+# exactly which IP the origin observed.
+#
+# LAB_MODE=1 disables the egress SSRF guard so mock origins on RFC1918
+# addresses are reachable. Never run a production node with it.
+name: smartdns-lab
+
+x-node: &node
+  image: smartdns/node:lab
+  build:
+    context: ../../..
+    dockerfile: node/deploy/Dockerfile
+  restart: unless-stopped
+  environment: &node-env
+    SMARTDNS_CONFIG: /var/lib/smartdns-agent/active/config.json
+    SMARTDNS_IDENTITY: /var/lib/smartdns-agent/identity
+    LOG_LEVEL: ${LOG_LEVEL:-}
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: smartdns
+      POSTGRES_USER: smartdns
+      POSTGRES_PASSWORD: labpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartdns -d smartdns && psql -U smartdns -d smartdns -c 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: {lab: {}}
+
+  panel:
+    image: smartdns/panel-api:lab
+    build:
+      context: ../../..
+      dockerfile: deploy/panel/Dockerfile
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgres://smartdns:labpassword@postgres:5432/smartdns?sslmode=disable
+      PANEL_SECRET_KEY: lab-secret-key-not-for-production
+      PANEL_PUBLIC_URL: http://localhost:8080
+      ADMIN_EMAIL: admin@lab.local
+      ADMIN_PASSWORD: labadminpassword
+      LAB_MODE: "1"
+      POLL_INTERVAL: "3"
+    volumes:
+      - panelstate:/var/lib/smartdns-panel
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      lab: {ipv4_address: 172.28.0.10}
+
+  # --- test doubles ---------------------------------------------------------
+  mock-auth:
+    image: smartdns/e2e:lab
+    build:
+      context: ../../..
+      dockerfile: tests/e2e/Dockerfile
+    entrypoint: ["/usr/local/bin/mockauth"]
+    environment:
+      RECORDS: "origin.test=172.28.0.50,ordinary.test=203.0.113.10,other.test=172.28.0.50"
+    networks:
+      lab: {ipv4_address: 172.28.0.40}
+
+  mock-origin:
+    image: smartdns/e2e:lab
+    entrypoint: ["/usr/local/bin/mockorigin"]
+    environment:
+      ORIGIN_HOST: origin.test
+      ORIGIN_ADDR: ":443"
+      ORIGIN_CERT_OUT: /shared/origin-ca.pem
+    volumes: [shared:/shared]
+    networks:
+      lab: {ipv4_address: 172.28.0.50}
+
+  # --- ingress node ---------------------------------------------------------
+  unbound:
+    image: smartdns/unbound:lab
+    build:
+      context: ../../..
+      dockerfile: node/deploy/unbound/Dockerfile
+    volumes:
+      - ./unbound-lab.conf:/etc/unbound/unbound.conf.d/lab.conf:ro
+    networks:
+      lab: {ipv4_address: 172.28.0.15}
+
+  agent-ingress:
+    <<: *node
+    depends_on:
+      panel: {condition: service_healthy}
+    entrypoint: ["/usr/local/bin/node-agent"]
+    environment:
+      <<: *node-env
+      NODE_ROLE: ingress
+      MGMT_ADDR: ":3333"
+      NODE_BUNDLE_FILE: /shared/ingress1.bundle
+      METRICS_ADDR: 0.0.0.0:9104
+    volumes:
+      - ingress-state:/var/lib/smartdns-agent
+      - shared:/shared
+    networks:
+      lab: {ipv4_address: 172.28.0.21}
+
+  dns-frontend:
+    <<: *node
+    depends_on: [agent-ingress, unbound]
+    entrypoint: ["/usr/local/bin/dns-frontend"]
+    environment:
+      <<: *node-env
+      DNS_UDP_ADDR: ":53"
+      DNS_TCP_ADDR: ":53"
+      DNS_DOT_ADDR: ":853"
+      DNS_DOH_ADDR: ":8443"
+      ALLOW_SELF_SIGNED_TLS: "1"
+      METRICS_ADDR: 0.0.0.0:9101
+    volumes: [ingress-state:/var/lib/smartdns-agent:ro]
+    networks:
+      lab: {ipv4_address: 172.28.0.20}
+
+  sni-proxy:
+    <<: *node
+    depends_on: [dns-frontend]
+    network_mode: "service:dns-frontend"
+    entrypoint: ["/usr/local/bin/sni-proxy"]
+    environment:
+      <<: *node-env
+      PROXY_ADDR: ":443"
+      METRICS_ADDR: 127.0.0.1:9102
+    volumes: [ingress-state:/var/lib/smartdns-agent:ro]
+
+  # --- second ingress node: proves a group of two gets identical config and
+  #     that the client fails over to it when the first ingress dies. ----------
+  agent-ingress-2:
+    <<: *node
+    depends_on:
+      panel: {condition: service_healthy}
+    entrypoint: ["/usr/local/bin/node-agent"]
+    environment:
+      <<: *node-env
+      NODE_ROLE: ingress
+      MGMT_ADDR: ":3333"
+      NODE_BUNDLE_FILE: /shared/ingress2.bundle
+      METRICS_ADDR: 0.0.0.0:9104
+    volumes:
+      - ingress2-state:/var/lib/smartdns-agent
+      - shared:/shared
+    networks:
+      lab: {ipv4_address: 172.28.0.26}
+
+  dns-frontend-2:
+    <<: *node
+    depends_on: [agent-ingress-2, unbound]
+    entrypoint: ["/usr/local/bin/dns-frontend"]
+    environment:
+      <<: *node-env
+      DNS_UDP_ADDR: ":53"
+      DNS_TCP_ADDR: ":53"
+      DNS_DOT_ADDR: ":853"
+      DNS_DOH_ADDR: ":8443"
+      ALLOW_SELF_SIGNED_TLS: "1"
+      METRICS_ADDR: 0.0.0.0:9101
+    volumes: [ingress2-state:/var/lib/smartdns-agent:ro]
+    networks:
+      lab: {ipv4_address: 172.28.0.25}
+
+  sni-proxy-2:
+    <<: *node
+    depends_on: [dns-frontend-2]
+    network_mode: "service:dns-frontend-2"
+    entrypoint: ["/usr/local/bin/sni-proxy"]
+    environment:
+      <<: *node-env
+      PROXY_ADDR: ":443"
+      METRICS_ADDR: 127.0.0.1:9102
+    volumes: [ingress2-state:/var/lib/smartdns-agent:ro]
+
+  # --- egress node ----------------------------------------------------------
+  agent-egress:
+    <<: *node
+    depends_on:
+      panel: {condition: service_healthy}
+    entrypoint: ["/usr/local/bin/node-agent"]
+    environment:
+      <<: *node-env
+      NODE_ROLE: egress
+      MGMT_ADDR: ":3333"
+      NODE_BUNDLE_FILE: /shared/egress.bundle
+      METRICS_ADDR: 0.0.0.0:9104
+    volumes:
+      - egress-state:/var/lib/smartdns-agent
+      - shared:/shared
+    networks:
+      lab: {ipv4_address: 172.28.0.31}
+
+  egress-relay:
+    <<: *node
+    depends_on: [agent-egress]
+    entrypoint: ["/usr/local/bin/egress-relay"]
+    environment:
+      <<: *node-env
+      RELAY_ADDR: ":8443"
+      METRICS_ADDR: 0.0.0.0:9103
+    volumes: [egress-state:/var/lib/smartdns-agent:ro]
+    networks:
+      lab: {ipv4_address: 172.28.0.30}
+
+  # --- the client used by the e2e script ------------------------------------
+  client:
+    image: smartdns/e2e:lab
+    entrypoint: ["sleep", "infinity"]
+    volumes: [shared:/shared]
+    networks:
+      lab: {ipv4_address: 172.28.0.60}
+
+networks:
+  lab:
+    ipam:
+      config: [{subnet: 172.28.0.0/24}]
+
+volumes:
+  panelstate:
+  ingress-state:
+  ingress2-state:
+  egress-state:
+  shared:
