@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"smartdns/panel/internal/pusher"
@@ -14,6 +15,31 @@ import (
 // mApplyFailures backs the restart-loop alert in docs/alerts.yml.
 var mApplyFailures = metrics.Counter("smartdns_agent_apply_failures_total",
 	"Failed config pushes recorded by the panel")
+
+// pushFanOut bounds how many nodes the panel talks to at once. Node calls carry
+// multi-second timeouts, so serial iteration would let a few dead nodes stall
+// the whole fleet; a small pool keeps a deploy or poll cycle bounded by the
+// slowest node, not their sum.
+const pushFanOut = 16
+
+// forEachNode runs fn over items with at most pushFanOut concurrent calls and
+// returns once all have finished. Each node's DB writes are independent, so the
+// only shared state is the connection pool, which pgx serialises safely.
+func forEachNode[T any](items []T, fn func(T)) {
+	sem := make(chan struct{}, pushFanOut)
+	var wg sync.WaitGroup
+	for _, it := range items {
+		it := it
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			fn(it)
+		}()
+	}
+	wg.Wait()
+}
 
 // targetFor builds a pusher.Target from a node row: its management address plus
 // the fingerprint of the server cert we minted, so a hijacked address is caught.
@@ -52,9 +78,12 @@ func (s *Server) pushRevision(revisionID string) {
 	if err != nil {
 		return
 	}
-	for _, a := range arts {
+	forEachNode(arts, func(a struct {
+		NodeID  string `db:"node_id"`
+		Content []byte `db:"content"`
+	}) {
 		s.pushOne(ctx, revisionID, a.NodeID, a.Content)
-	}
+	})
 }
 
 func (s *Server) pushOne(ctx contextT, revisionID, nodeID string, artifact []byte) {
@@ -106,28 +135,30 @@ func (s *Server) PollNodes(ctx context.Context, interval time.Duration) {
 	}
 }
 
+type pollRow struct {
+	ID      string  `db:"id"`
+	Name    string  `db:"name"`
+	Mgmt    string  `db:"mgmt_address"`
+	FP      string  `db:"fingerprint"`
+	Desired *string `db:"desired_revision_id"`
+}
+
 func (s *Server) pollOnce(ctx context.Context) {
-	nodes, err := store.Many[struct {
-		ID      string  `db:"id"`
-		Name    string  `db:"name"`
-		Mgmt    string  `db:"mgmt_address"`
-		FP      string  `db:"fingerprint"`
-		Desired *string `db:"desired_revision_id"`
-	}](ctx, s.DB, `
+	nodes, err := store.Many[pollRow](ctx, s.DB, `
 		SELECT n.id::text, n.name, n.mgmt_address, i.fingerprint, n.desired_revision_id::text
 		FROM nodes n JOIN node_identities i ON i.node_id = n.id
 		WHERE n.mgmt_address <> '' AND i.revoked_at IS NULL AND n.status <> 'disabled'`)
 	if err != nil {
 		return
 	}
-	for _, n := range nodes {
+	forEachNode(nodes, func(n pollRow) {
 		t := pusher.Target{NodeID: n.ID, Name: n.Name, MgmtAddress: n.Mgmt, NodeCertFP: n.FP}
 		h, err := s.Cfg.Pusher.Poll(ctx, t)
 		if err != nil {
 			_, _ = s.DB.Exec(ctx, `UPDATE nodes SET status='unhealthy',
 				last_error=$2, updated_at=now() WHERE id=$1 AND status NOT IN ('maintenance','disabled')`,
 				n.ID, truncate(err.Error(), 300))
-			continue
+			return
 		}
 		status := h.Status
 		if status != "healthy" && status != "degraded" {
@@ -152,5 +183,5 @@ func (s *Server) pollOnce(ctx context.Context) {
 				s.pushOne(ctx, *n.Desired, n.ID, content)
 			}
 		}
-	}
+	})
 }

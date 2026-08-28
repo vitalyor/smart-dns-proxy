@@ -276,12 +276,12 @@ func soaFor(name string, ttl uint32) dns.RR {
 var rotSeed uint32
 
 // rotate cycles the answer order so clients spread across ingress members.
+// Called concurrently from every query, so the counter is bumped atomically.
 func rotate(rr []dns.RR) {
 	if len(rr) < 2 {
 		return
 	}
-	rotSeed++
-	n := int(rotSeed) % len(rr)
+	n := int(atomic.AddUint32(&rotSeed, 1)) % len(rr)
 	if n == 0 {
 		return
 	}

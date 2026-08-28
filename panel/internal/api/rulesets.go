@@ -383,10 +383,3 @@ func nonNil(s []string) []string {
 	}
 	return s
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
