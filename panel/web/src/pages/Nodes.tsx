@@ -43,10 +43,10 @@ export default function Nodes() {
         Расхождение между назначенной и применённой конфигурацией видно в колонке «Конфигурация».
       </Notice>
 
-      <Card title="Зарегистрированные ноды" tight>
-        {nodes.error && !nodes.data ? <ErrorState message={nodes.error} onRetry={nodes.reload} />
-          : nodes.loading && !nodes.data ? <Spinner />
-          : nodes.data!.items.length === 0 ? (
+      {nodes.error && !nodes.data ? <ErrorState message={nodes.error} onRetry={nodes.reload} />
+        : nodes.loading && !nodes.data ? <Spinner />
+        : nodes.data!.items.length === 0 ? (
+          <Card tight>
             <div className="empty">
               <h3>Нод пока нет</h3>
               <p className="muted small">
@@ -57,64 +57,88 @@ export default function Nodes() {
                 <IconPlus />Добавить ноду
               </button>
             </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Нода</th><th>Роль</th><th>Статус</th><th>Адреса</th>
-                    <th>Конфигурация</th><th>Heartbeat</th><th>Группы</th><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {nodes.data!.items.map((n) => (
-                    <tr key={n.id}>
-                      <td>
-                        <div style={{ fontWeight: 550 }}>{n.name}</div>
-                        <div className="tiny dim mono">агент {n.agent_version || "—"}</div>
-                      </td>
-                      <td><span className={`badge ${n.role === "ingress" ? "direct" : "managed"}`}>{n.role}</span></td>
-                      <td>
-                        <StatusBadge status={n.status} />
-                        {n.last_error && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>{n.last_error}</div>}
-                      </td>
-                      <td className="mono tiny">
-                        <div>{n.public_ipv4 ?? "— IPv4"}</div>
-                        <div className="dim">{n.public_ipv6 ?? "— IPv6"}</div>
-                        {n.relay_endpoint && <div className="dim">relay {n.relay_endpoint}</div>}
-                        <div className="dim">mgmt {n.mgmt_address || "—"}</div>
-                      </td>
-                      <td className="num small">
-                        {n.applied_sequence ?? "—"}
-                        {n.desired_sequence !== null && n.desired_sequence !== n.applied_sequence && (
-                          <span className="badge warn" style={{ marginLeft: 6 }}>ждёт #{n.desired_sequence}</span>
-                        )}
-                      </td>
-                      <td className="small dim" title={timeTitle(n.last_seen_at)}>{ago(n.last_seen_at)}</td>
-                      <td className="tiny mono dim">{n.groups?.length ? n.groups.join(", ") : "—"}</td>
-                      <td className="actions">
-                        <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
-                        <button className="btn sm ghost" onClick={async () => {
-                          try {
-                            await api(`/nodes/${n.id}/maintenance`, {
-                              method: "POST", body: { enabled: n.status !== "maintenance" },
-                            });
-                            toast({ kind: "ok", title: n.status === "maintenance" ? "Обслуживание снято" : "Нода в обслуживании" });
-                            nodes.reload();
-                          } catch (e) { toast({ kind: "bad", title: "Не удалось изменить режим", body: errText(e) }); }
-                        }}>
-                          {n.status === "maintenance" ? "Вернуть в работу" : "Обслуживание"}
-                        </button>
-                        <button className="btn sm ghost danger" aria-label={`Удалить ${n.name}`}
-                          onClick={() => setRemoving(n)}><IconTrash /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-      </Card>
+          </Card>
+        ) : (["ingress", "egress"] as const).map((role) => {
+          const rows = nodes.data!.items.filter((n) => n.role === role);
+          const meta = role === "ingress"
+            ? { title: "Точки входа", eyebrow: "принимают DNS и HTTPS от устройств", cls: "direct" }
+            : { title: "Точки выхода", eyebrow: "выходят к сайтам за рубежом", cls: "managed" };
+          return (
+            <Card key={role} title={meta.title} eyebrow={meta.eyebrow} tight>
+              {rows.length === 0 ? (
+                <div className="empty" style={{ padding: 28 }}>
+                  <h3>Нет {role === "ingress" ? "входных" : "выходных"} нод</h3>
+                  <p className="muted small">
+                    {role === "ingress"
+                      ? "Сервер в России, куда устройства отправляют запросы."
+                      : "Зарубежный сервер, чей IP видит конечный сервис."}
+                  </p>
+                  <button className="btn sm primary" style={{ marginTop: 12 }} onClick={() => setCreating(true)}>
+                    <IconPlus />Добавить
+                  </button>
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Нода</th><th>Статус</th><th>Адреса</th>
+                        <th>Конфигурация</th><th>Heartbeat</th><th>Группы</th><th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((n) => (
+                        <tr key={n.id}>
+                          <td>
+                            <div className="row" style={{ gap: 8 }}>
+                              <span className={`node-dot ${meta.cls}`} aria-hidden="true" />
+                              <div style={{ fontWeight: 550 }}>{n.name}</div>
+                            </div>
+                            <div className="tiny dim mono" style={{ marginLeft: 16 }}>агент {n.agent_version || "—"}</div>
+                          </td>
+                          <td>
+                            <StatusBadge status={n.status} />
+                            {n.last_error && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>{n.last_error}</div>}
+                          </td>
+                          <td className="mono tiny">
+                            <div>{n.public_ipv4 ?? "— IPv4"}</div>
+                            <div className="dim">{n.public_ipv6 ?? "— IPv6"}</div>
+                            {n.relay_endpoint && <div className="dim">relay {n.relay_endpoint}</div>}
+                            <div className="dim">mgmt {n.mgmt_address || "—"}</div>
+                          </td>
+                          <td className="num small">
+                            {n.applied_sequence ?? "—"}
+                            {n.desired_sequence !== null && n.desired_sequence !== n.applied_sequence && (
+                              <span className="badge warn" style={{ marginLeft: 6 }}>ждёт #{n.desired_sequence}</span>
+                            )}
+                          </td>
+                          <td className="small dim" title={timeTitle(n.last_seen_at)}>{ago(n.last_seen_at)}</td>
+                          <td className="tiny mono dim">{n.groups?.length ? n.groups.join(", ") : "—"}</td>
+                          <td className="actions">
+                            <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
+                            <button className="btn sm ghost" onClick={async () => {
+                              try {
+                                await api(`/nodes/${n.id}/maintenance`, {
+                                  method: "POST", body: { enabled: n.status !== "maintenance" },
+                                });
+                                toast({ kind: "ok", title: n.status === "maintenance" ? "Обслуживание снято" : "Нода в обслуживании" });
+                                nodes.reload();
+                              } catch (e) { toast({ kind: "bad", title: "Не удалось изменить режим", body: errText(e) }); }
+                            }}>
+                              {n.status === "maintenance" ? "Вернуть в работу" : "Обслуживание"}
+                            </button>
+                            <button className="btn sm ghost danger" aria-label={`Удалить ${n.name}`}
+                              onClick={() => setRemoving(n)}><IconTrash /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          );
+        })}
 
       {creating && (
         <CreateNode
