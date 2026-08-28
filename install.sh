@@ -24,6 +24,7 @@ REPO="${SMARTDNS_REPO:-}"
 REF="${SMARTDNS_REF:-main}"
 SRC_DIR=/opt/smartdns-src
 ASSUME_YES=0
+FREE_DNS=0            # --free-dns-port: освободить 53 у systemd-resolved без вопросов
 RESTORE=""            # файл резервной копии для переезда панели (--restore)
 PASS=()               # аргументы, которые уйдут в под-скрипт как есть
 
@@ -41,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --ref)       REF="$2"; shift 2;;
     --src-dir)   SRC_DIR="$2"; shift 2;;
     --restore)   RESTORE="$2"; shift 2;;
+    --free-dns-port) FREE_DNS=1; shift;;
     --yes|-y)    ASSUME_YES=1; PASS+=("--yes"); shift;;
     -h|--help)   sed -n '2,22p' "$0"; exit 0;;
     *)           PASS+=("$1"); shift;;   # всё прочее — под-скрипту (--bundle, --panel-ip, --public-url, …)
@@ -113,10 +115,31 @@ avail_kb=${avail_kb:-$(df -Pk / | awk 'NR==2{print $4}')}
   || die "мало места: свободно $((avail_kb/1024)) МиБ, нужно $((need_kb/1024)) МиБ.\n     На тесной ноде соберите образ на другой машине: docker save … | ssh сюда 'docker load'"
 ok "диска достаточно ($((avail_kb/1024)) МиБ свободно)"
 
-# Память: сборка Go на 1 ГБ бывает тяжёлой — предупреждаем, но не блокируем.
+# Память: панель собирается на месте, нода лишь тянет готовые образы.
 mem_free_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')
-[[ -n "$mem_free_mb" && $mem_free_mb -lt 300 ]] \
-  && warn "свободно всего ${mem_free_mb} МиБ — сборка образов может упереться в память; при сбое соберите образ на другой машине"
+[[ "$ROLE" == panel && -n "$mem_free_mb" && $mem_free_mb -lt 300 ]] \
+  && warn "свободно всего ${mem_free_mb} МиБ — сборка панели может упереться в память"
+
+# Порт 53 на ingress почти всегда держит systemd-resolved. Освобождаем его
+# БЕЗОПАСНО: отключаем только заглушку и перенаправляем resolv.conf на реальный
+# апстрим, чтобы DNS самого сервера продолжил работать.
+free_dns_port() {
+  info "Освобождаю порт 53 у systemd-resolved (DNS хоста сохранится)"
+  mkdir -p /etc/systemd/resolved.conf.d
+  printf '[Resolve]\nDNSStubListener=no\n' > /etc/systemd/resolved.conf.d/smartdns.conf
+  if [[ -e /run/systemd/resolve/resolv.conf ]]; then
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+  else
+    warn "нет /run/systemd/resolve/resolv.conf — /etc/resolv.conf не трогаю; проверь DNS хоста после установки"
+  fi
+  systemctl restart systemd-resolved || die "не удалось перезапустить systemd-resolved"
+  ok "порт 53 освобождён"
+}
+if [[ "$ROLE" == ingress ]] && ss -lntpH "sport = :53" 2>/dev/null | grep -q systemd-resolve; then
+  if [[ $FREE_DNS -eq 1 ]] || { [[ $ASSUME_YES -eq 0 ]] && [[ "$(ask 'Порт 53 занят systemd-resolved. Освободить его (DNS хоста сохранится)? [y/N] ')" =~ ^[yY]$ ]]; }; then
+    free_dns_port
+  fi
+fi
 
 # ГЛАВНОЕ: занятые порты. Если порт слушается — СТОП, ничего не отбираем.
 conflict=0
