@@ -16,16 +16,17 @@ import (
 // defaultRepo is where the public installer and per-role compose files live.
 const defaultRepo = "vitalyor/smart-dns-proxy"
 
-// installCommand renders the one-line node installer. The bundle carries the
-// node's identity; install.sh (fetched from the public repo) pulls the prebuilt
-// images and only downloads the role's compose file — no source, no clone, no key.
-func installCommand(repo, role, bundle string) string {
+// installCommand renders the one-line node installer. The installer prompts for
+// the bundle interactively (paste when asked), so the secret never lands in the
+// command — and thus not in shell history or terminal logs. install.sh (from the
+// public repo) pulls prebuilt images and downloads only the role's compose file.
+func installCommand(repo, role string) string {
 	if repo == "" {
 		repo = defaultRepo
 	}
 	return fmt.Sprintf(
-		"sudo bash <(curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh) --role %s --bundle %s",
-		repo, role, bundle)
+		"sudo bash <(curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh) --role %s",
+		repo, role)
 }
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
@@ -300,7 +301,7 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 			"mgmt_address":     mgmt,
 			"bundle":           bundle.Encode(), // shown once
 			"cert_fingerprint": fp,
-			"install_command":  installCommand(s.Cfg.GitHubRepo, req.Role, bundle.Encode()),
+			"install_command":  installCommand(s.Cfg.GitHubRepo, req.Role),
 		}, nil
 	})
 }

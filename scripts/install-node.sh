@@ -33,7 +33,18 @@ done
 
 [[ $EUID -eq 0 ]] || die "запустите через sudo"
 [[ "$ROLE" == "ingress" || "$ROLE" == "egress" ]] || die "--role должен быть ingress или egress"
-[[ -n "$BUNDLE" ]] || die "--bundle обязателен: скопируйте его из панели (Ноды → Добавить ноду)"
+
+# Бандл можно передать флагом --bundle или вставить по запросу. Второе чище:
+# секрет не остаётся в истории shell и в логах терминала.
+if [[ -z "$BUNDLE" ]]; then
+  printf '\n%sВставьте бандл из панели%s (Ноды → Добавить ноду → Копировать бандл), затем Enter:\n' "$(tput bold 2>/dev/null)" "$(tput sgr0 2>/dev/null)"
+  while [[ -z "$BUNDLE" ]]; do
+    read -rp "Бандл: " BUNDLE </dev/tty || die "ввод прерван"
+    BUNDLE="${BUNDLE//[[:space:]]/}"   # убираем переносы/пробелы, если вставка их добавила
+  done
+fi
+# Лёгкая проверка: бандл должен быть корректным base64 (сам агент проверит глубже).
+printf '%s' "$BUNDLE" | base64 -d >/dev/null 2>&1 || die "бандл не похож на base64 — скопируйте его из панели целиком"
 command -v docker >/dev/null || die "Docker не установлен"
 docker compose version >/dev/null 2>&1 || die "нужен Docker Compose v2"
 
