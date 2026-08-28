@@ -98,10 +98,8 @@ LOG_LEVEL=
 LOG_MAX_SIZE=10m
 LOG_MAX_FILE=3
 LAB_MODE=0
-# Необязательно: fine-grained PAT (права Administration + Contents ТОЛЬКО на этот
-# репозиторий) и его owner/name — тогда панель сама чеканит на каждую ноду
-# read-only deploy key и вшивает его в команду установки. Пусто → команда ручная.
-GITHUB_DEPLOY_TOKEN=
+# Необязательно: публичный репозиторий (owner/name), на который указывает
+# однострочная команда установки ноды. Пусто → встроенный по умолчанию.
 GITHUB_REPO=
 BACKUP_DIR=$BACKUP_DIR
 BACKUP_INTERVAL_SEC=86400

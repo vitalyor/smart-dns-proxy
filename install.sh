@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 # SmartDNS — установка панели или ноды одной командой.
 #
-#   bash <(curl -fsSL https://<ваш-хост>/install.sh)                 # спросит роль
-#   bash <(curl -fsSL https://<ваш-хост>/install.sh) --role panel \
-#        --public-url https://panel.example.net --admin-email you@example.net
-#   bash <(curl -fsSL https://<ваш-хост>/install.sh) --role ingress \
-#        --bundle <BASE64> --panel-ip 203.0.113.9
-#   bash <(curl -fsSL https://<ваш-хост>/install.sh) --role egress \
-#        --bundle <BASE64> --panel-ip 203.0.113.9
+#   sudo bash <(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh) --role ingress --bundle <BASE64>
+#   sudo bash <(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh) --role egress  --bundle <BASE64>
+#   sudo bash <(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh) --role panel --public-url https://panel.example.net
 #
 # Скрипт НИЧЕГО не ломает: если нужный порт уже занят, он останавливается и
 # показывает, кто его держит, — а не отбирает. Все проверки идут ДО первого
 # изменения на сервере.
 #
-# Переменные окружения для приватного репозитория:
-#   SMARTDNS_REPO   git-адрес (по умолчанию из --repo)
+# Ноде исходный код НЕ нужен — образы готовые в реестре (GHCR). Для ноды
+# скачивается только docker-compose.yml её роли; репозиторий не клонируется.
+#
+# Переопределяемые переменные:
+#   SMARTDNS_REPO   git-адрес для роли panel (по умолчанию публичный https)
 #   SMARTDNS_REF    ветка/тег (по умолчанию main)
-#   GITHUB_TOKEN    токен для https-клона приватного репозитория
+#   SMARTDNS_RAW    база raw-URL для загрузки файлов (по умолчанию GitHub raw)
 set -euo pipefail
 
 ROLE=""
-REPO="${SMARTDNS_REPO:-}"
+REPO="${SMARTDNS_REPO:-https://github.com/vitalyor/smart-dns-proxy.git}"
 REF="${SMARTDNS_REF:-main}"
+RAW_BASE="${SMARTDNS_RAW:-https://raw.githubusercontent.com/vitalyor/smart-dns-proxy}"
 SRC_DIR=/opt/smartdns-src
 ASSUME_YES=0
 FREE_DNS=0            # --free-dns-port: освободить 53 у systemd-resolved без вопросов
@@ -160,26 +160,34 @@ if [[ $conflict -eq 1 ]]; then
 fi
 ok "все нужные порты свободны: ${PORTS[*]}"
 
-# --- исходники: локальные рядом со скриптом, иначе клонируем -----------------
+# --- файлы установщика ------------------------------------------------------
+# Рядом со скриптом (запуск из клона) — используем как есть. Иначе: для ноды
+# тянем ТОЛЬКО docker-compose её роли (образы готовые в реестре, исходник не
+# нужен); панель ставится на один хост и клонирует публичный репозиторий.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
-if [[ -n "$here" && -f "$here/scripts/install-panel.sh" ]]; then
+if [[ -n "$here" && -f "$here/scripts/install-node.sh" ]]; then
   SRC="$here"
-  ok "исходники найдены рядом со скриптом: $SRC"
-else
-  command -v git >/dev/null || die "нужен git для загрузки исходников (apt install git)"
-  [[ -n "$REPO" ]] || die "укажите репозиторий: --repo git@github.com:<вы>/smart-dns-proxy.git (или переменную SMARTDNS_REPO)"
-  url="$REPO"
-  if [[ -n "${GITHUB_TOKEN:-}" && "$url" == https://* ]]; then
-    url="https://x-access-token:${GITHUB_TOKEN}@${REPO#https://}"
-  fi
+  ok "файлы найдены рядом со скриптом: $SRC"
+elif [[ "$ROLE" == panel ]]; then
+  command -v git >/dev/null || die "нужен git для загрузки панели (apt install git)"
   if [[ -d "$SRC_DIR/.git" ]]; then
-    info "Обновляю исходники в $SRC_DIR"
+    info "Обновляю исходники панели в $SRC_DIR"
     git -C "$SRC_DIR" fetch --depth 1 origin "$REF" && git -C "$SRC_DIR" checkout -q FETCH_HEAD
   else
     info "Клонирую $REPO ($REF) в $SRC_DIR"
-    git clone --depth 1 --branch "$REF" "$url" "$SRC_DIR" || die "клонирование не удалось (приватный репо? задайте GITHUB_TOKEN или используйте ssh-адрес)"
+    git clone --depth 1 --branch "$REF" "$REPO" "$SRC_DIR" || die "клонирование не удалось"
   fi
   SRC="$SRC_DIR"
+else
+  command -v curl >/dev/null || die "нужен curl"
+  info "Загружаю установщик и docker-compose роли $ROLE (образы из реестра, исходник не нужен)"
+  mkdir -p "$SRC_DIR/scripts" "$SRC_DIR/node/deploy/$ROLE"
+  curl -fsSL "$RAW_BASE/$REF/scripts/install-node.sh" -o "$SRC_DIR/scripts/install-node.sh" \
+    || die "не удалось скачать установщик ноды"
+  curl -fsSL "$RAW_BASE/$REF/node/deploy/$ROLE/docker-compose.yml" -o "$SRC_DIR/node/deploy/$ROLE/docker-compose.yml" \
+    || die "не удалось скачать docker-compose роли $ROLE"
+  SRC="$SRC_DIR"
+  ok "нужные файлы загружены в $SRC_DIR (репозиторий не клонировался)"
 fi
 
 # --- передаём управление под-скрипту роли -----------------------------------
