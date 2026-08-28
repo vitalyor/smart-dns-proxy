@@ -18,7 +18,7 @@ type Node = {
 export default function Nodes() {
   const nodes = useAsync<{ items: Node[] }>(() => api("/nodes"), []);
   const [creating, setCreating] = useState(false);
-  const [issued, setIssued] = useState<{ name: string; role: string; install_command: string; bundle: string } | null>(null);
+  const [issued, setIssued] = useState<{ name: string; role: string; install_command: string; bundle: string; deploy_key?: boolean } | null>(null);
   const [removing, setRemoving] = useState<Node | null>(null);
   const [editing, setEditing] = useState<Node | null>(null);
   const toast = useToast();
@@ -128,6 +128,12 @@ export default function Nodes() {
             Скопируйте команду сейчас. Бандл несёт TLS-идентичность ноды и пин панели;
             в базе он не хранится. Потеряли — удалите ноду и создайте заново.
           </Notice>
+          {issued.deploy_key && (
+            <Notice kind="info" title="Команда содержит одноразовый ключ доступа к репозиторию">
+              Панель выпустила для этой ноды персональный read-only deploy key и сама его склонирует.
+              Ключ виден только сейчас; при удалении ноды он отзывается автоматически.
+            </Notice>
+          )}
           <div className="codeblock">{issued.install_command}</div>
           <div className="row">
             <Copyable value={issued.install_command} label="Копировать команду" />
@@ -165,7 +171,7 @@ export default function Nodes() {
 
 function CreateNode({ onClose, onCreated }: {
   onClose: () => void;
-  onCreated: (v: { name: string; role: string; install_command: string; bundle: string }) => void;
+  onCreated: (v: { name: string; role: string; install_command: string; bundle: string; deploy_key?: boolean }) => void;
 }) {
   const [role, setRole] = useState("ingress");
   const [name, setName] = useState("");
@@ -184,7 +190,7 @@ function CreateNode({ onClose, onCreated }: {
           try {
             const body: Record<string, unknown> = { role, name, mgmt_address: mgmt, public_ipv4: ipv4 };
             if (role === "egress") body.relay_port = relayPort;
-            const v = await api<{ name: string; role: string; install_command: string; bundle: string }>(
+            const v = await api<{ name: string; role: string; install_command: string; bundle: string; deploy_key?: boolean }>(
               "/nodes", { method: "POST", body, headers: { "Idempotency-Key": crypto.randomUUID() } }
             );
             onCreated(v);

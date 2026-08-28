@@ -47,6 +47,11 @@ type Config struct {
 	// and key material and dump/restore the database. Empty in tests.
 	StateDir    string
 	DatabaseURL string
+	// GitHubToken (fine-grained PAT, Administration+Contents on GitHubRepo only)
+	// and GitHubRepo ("owner/name") let the panel mint a per-node read-only
+	// deploy key on node creation. Empty → the install command stays manual.
+	GitHubToken string
+	GitHubRepo  string
 }
 
 // Server wires the API together.
