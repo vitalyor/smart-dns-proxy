@@ -8,7 +8,7 @@ RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 COPY panel/web/ ./
 RUN npm run build
 
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
