@@ -93,7 +93,7 @@ func (s *Server) alerts(ctx contextT, drift, stale, pending int) []alert {
 	}
 	if drift > 0 {
 		out = append(out, alert{"warn", "revision_drift",
-			fmt.Sprintf("%d нод ещё не применили назначенную ревизию", drift),
+			fmt.Sprintf("%d нод ещё не применили назначенную конфигурацию", drift),
 			"Откройте раздел «Ревизии», чтобы посмотреть состояние выката."})
 	}
 	if pending > 0 {
@@ -112,7 +112,7 @@ func (s *Server) alerts(ctx contextT, drift, stale, pending int) []alert {
 		  AND (last_fetch_at IS NULL OR last_fetch_at < now() - (interval_sec * 2) * interval '1 second')`)
 	if staleRules > 0 {
 		out = append(out, alert{"warn", "rules_stale",
-			fmt.Sprintf("%d наборов правил не обновлялись дольше двух интервалов", staleRules),
+			fmt.Sprintf("%d списков доменов не обновлялись дольше двух интервалов", staleRules),
 			"Проверьте доступность источников; активный список при этом не изменяется."})
 	}
 	if out == nil {

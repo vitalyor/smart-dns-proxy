@@ -112,7 +112,7 @@ func (s *Server) createRuleSet(w http.ResponseWriter, r *http.Request) error {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		return badRequest("укажите название набора правил")
+		return badRequest("укажите название списка доменов")
 	}
 	if req.UpdateMode == "" {
 		req.UpdateMode = "manual_approve"
@@ -193,7 +193,7 @@ func (s *Server) deleteRuleSet(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if len(users) > 0 {
-		e := conflictErr("набор правил используется сервисами")
+		e := conflictErr("список доменов используется сервисами")
 		e.Details = users
 		return e
 	}
@@ -360,7 +360,7 @@ func (s *Server) approveRuleSet(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.audit(r.Context(), r, "rule_set.approved", "rule_set", id, nil, map[string]any{"version_id": req.VersionID})
-	s.event(r.Context(), "info", "rules", "version_activated", "Новая версия набора правил активирована", nil,
+	s.event(r.Context(), "info", "rules", "version_activated", "Новая версия списка доменов активирована", nil,
 		map[string]any{"rule_set_id": id, "version_id": req.VersionID})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 	return nil

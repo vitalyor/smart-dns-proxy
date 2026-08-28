@@ -43,7 +43,7 @@ export default function Settings({ me, onChanged }: { me: Me; onChanged: () => v
           node_log_level: str("node_log_level", "info"),
         },
       });
-      toast({ kind: "ok", title: "Настройки сохранены", body: "Соберите ревизию, чтобы применить их на нодах." });
+      toast({ kind: "ok", title: "Настройки сохранены", body: "Соберите конфигурацию, чтобы применить их на нодах." });
       s.reload();
     } catch (e) { toast({ kind: "bad", title: "Не удалось сохранить", body: errText(e) }); }
     finally { setBusy(false); }
@@ -61,8 +61,8 @@ export default function Settings({ me, onChanged }: { me: Me; onChanged: () => v
         </button>
       </div>
 
-      <Notice kind="info" title="Настройки попадают на ноды только через ревизию">
-        Изменения здесь меняют желаемое состояние. Ноды получат его после сборки и выката ревизии.
+      <Notice kind="info" title="Настройки попадают на ноды только через конфигурацию">
+        Изменения здесь меняют желаемое состояние. Ноды получат его после сборки и применения конфигурации.
       </Notice>
 
       <div className="grid g2">
@@ -96,7 +96,7 @@ export default function Settings({ me, onChanged }: { me: Me; onChanged: () => v
 
         <Card title="Имена и адреса" eyebrow="что видят устройства">
           <div className="col" style={{ gap: 14 }}>
-            <Field label="Имя для DoH" hint="Домен, на который выписан TLS-сертификат ingress-ноды.">
+            <Field label="Имя для DoH" hint="Домен, на который выписан TLS-сертификат входной ноды.">
               <input className="input mono" value={str("doh_hostname")}
                 onChange={(e) => set("doh_hostname", e.target.value)} placeholder="dns.example.net" />
             </Field>
@@ -108,7 +108,7 @@ export default function Settings({ me, onChanged }: { me: Me; onChanged: () => v
               <input className="input mono" value={str("dot_hostname")}
                 onChange={(e) => set("dot_hostname", e.target.value)} placeholder="dns.example.net" />
             </Field>
-            <Field label="Резолвер на egress" hint="Через него egress-нода определяет настоящий адрес origin.">
+            <Field label="Резолвер на egress" hint="Через него выходная нода определяет настоящий адрес сайта.">
               <input className="input mono" value={str("egress_resolver")}
                 onChange={(e) => set("egress_resolver", e.target.value)} placeholder="1.1.1.1:53" />
             </Field>
@@ -156,7 +156,7 @@ export default function Settings({ me, onChanged }: { me: Me; onChanged: () => v
             </select>
           </Field>
           <Field label="Уровень нод"
-            hint="Уезжает на ноды со следующей ревизией. Нода, где LOG_LEVEL задан локально, остаётся на своём — так отлаживают один хост.">
+            hint="Уезжает на ноды со следующей конфигурацией. Нода, где LOG_LEVEL задан локально, остаётся на своём — так отлаживают один хост.">
             <select className="select" value={str("node_log_level", "info")}
               onChange={(e) => set("node_log_level", e.target.value)}>
               {LOG_LEVELS}

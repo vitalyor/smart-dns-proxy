@@ -49,7 +49,7 @@ export default function RuleSetDetail() {
     <>
       <div className="row">
         <div>
-          <div className="eyebrow"><Link to="/rule-sets">наборы правил</Link> / {rs.name}</div>
+          <div className="eyebrow"><Link to="/rule-sets">списки доменов</Link> / {rs.name}</div>
           <h1>{rs.name}</h1>
         </div>
         <div className="spacer" />
@@ -165,7 +165,7 @@ export default function RuleSetDetail() {
 
       {removingSource && (
         <Confirm title="Удалить источник?" danger confirmLabel="Удалить"
-          body="Записи этого источника исчезнут из набора при следующем обновлении. Активная версия не меняется до пересборки."
+          body="Записи этого источника исчезнут из списка при следующем обновлении. Активная версия не меняется до пересборки."
           onClose={() => setRemovingSource(null)}
           onConfirm={async () => {
             await api(`/rule-sets/${id}/sources/${removingSource.id}`, { method: "DELETE" });
@@ -184,7 +184,7 @@ export default function RuleSetDetail() {
               }}><IconClose />Отклонить</button>
               <button className="btn primary" onClick={async () => {
                 await api(`/rule-sets/${id}/approve`, { method: "POST", body: { version_id: diff.version.id } });
-                toast({ kind: "ok", title: "Версия активирована", body: "Соберите ревизию, чтобы выкатить её на ноды." });
+                toast({ kind: "ok", title: "Версия активирована", body: "Соберите конфигурацию, чтобы применить её на нодах." });
                 setDiff(null); d.reload();
               }}><IconCheck />Применить</button>
             </>
@@ -300,7 +300,7 @@ function AddSource({ ruleSetId, onClose, onAdded }: { ruleSetId: string; onClose
       )}
 
       <div className="grid g2">
-        <Field label="Роль в наборе" hint="Исключения применяются после объединения всех включений.">
+        <Field label="Роль в списке" hint="Исключения применяются после объединения всех включений.">
           <select className="select" value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="include">Включение</option>
             <option value="exclude">Исключение</option>

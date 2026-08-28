@@ -31,8 +31,8 @@ export default function Services() {
       </div>
 
       <Notice kind="info" title="Сервис связывает список доменов с маршрутом">
-        Один и тот же набор правил управляет подменой DNS, допуском на ingress и allowlist на egress.
-        Если два сервиса претендуют на один домен с одинаковым приоритетом, сборка ревизии остановится
+        Один и тот же список доменов управляет и подменой DNS, и пропуском на входе, и разрешёнными адресами на выходе.
+        Если два сервиса претендуют на один домен с одинаковым приоритетом, сборка конфигурации остановится
         и покажет список конфликтов.
       </Notice>
 
@@ -43,8 +43,8 @@ export default function Services() {
             <div className="empty">
               <h3>Сервисов пока нет</h3>
               <p className="muted small">
-                Сервис — это то, что вы включаете: например, Gemini. Сначала создайте набор правил,
-                затем свяжите его с ingress- и egress-группой.
+                Сервис — это то, что вы включаете: например, Gemini. Сначала создайте список доменов,
+                затем свяжите его с точкой входа и точкой выхода.
               </p>
               <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setEditing("new")}>
                 <IconPlus />Новый сервис
@@ -56,7 +56,7 @@ export default function Services() {
             <div className="table-wrap">
               <table className="table">
                 <thead>
-                  <tr><th>Сервис</th><th>Набор правил</th><th>Маршрут</th><th>TTL</th>
+                  <tr><th>Сервис</th><th>Список доменов</th><th>Маршрут</th><th>TTL</th>
                     <th>Порты</th><th>Приоритет</th><th>Состояние</th><th /></tr>
                 </thead>
                 <tbody>
@@ -105,12 +105,12 @@ export default function Services() {
 
       {removing && (
         <Confirm title={`Удалить сервис ${removing.name}?`} danger confirmLabel="Удалить"
-          body="Домены сервиса перестанут проходить через инфраструктуру после следующей сборки и выката ревизии."
+          body="Домены сервиса перестанут проходить через инфраструктуру после следующей сборки и применения конфигурации."
           onClose={() => setRemoving(null)}
           onConfirm={async () => {
             try {
               await api(`/services/${removing.id}`, { method: "DELETE" });
-              toast({ kind: "ok", title: "Сервис удалён", body: "Соберите новую ревизию, чтобы применить изменение." });
+              toast({ kind: "ok", title: "Сервис удалён", body: "Соберите новую конфигурацию, чтобы применить изменение." });
               setRemoving(null); list.reload();
             } catch (e) { toast({ kind: "bad", title: "Удаление отклонено", body: errText(e) }); }
           }} />
@@ -173,7 +173,7 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
     }>
       {missing && (
         <Notice kind="warn" title="Не хватает зависимостей">
-          Чтобы создать сервис, нужны набор правил, ingress-группа и egress-группа.
+          Чтобы создать сервис, нужны список доменов, точка входа и точка выхода.
           Создайте недостающее и вернитесь сюда.
         </Notice>
       )}
@@ -186,19 +186,19 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
         </Field>
       </div>
       <div className="grid g3">
-        <Field label="Набор правил">
+        <Field label="Список доменов">
           <select className="select" value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)}>
             <option value="">— не выбран —</option>
             {ruleSets.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </Field>
-        <Field label="Ingress-группа">
+        <Field label="Точка входа">
           <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
             <option value="">— не выбрана —</option>
             {ingress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </Field>
-        <Field label="Egress-группа">
+        <Field label="Точка выхода">
           <select className="select" value={egressId} onChange={(e) => setEgressId(e.target.value)}>
             <option value="">— не выбрана —</option>
             {egress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}

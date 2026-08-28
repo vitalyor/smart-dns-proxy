@@ -28,13 +28,13 @@ export default function Setup() {
 
   const steps = [
     {
-      title: "Добавить ingress-ноду",
+      title: "Добавить входную ноду",
       body: "Сервер в России, куда устройства отправляют DNS-запросы и TLS-соединения.",
       done: nodesOf("ingress") > 0,
       to: "/nodes", cta: "Добавить ноду",
     },
     {
-      title: "Добавить egress-ноду",
+      title: "Добавить выходную ноду",
       body: "Зарубежный сервер, чей IP увидит конечный сервис.",
       done: nodesOf("egress") > 0,
       to: "/nodes", cta: "Добавить ноду",
@@ -46,22 +46,22 @@ export default function Setup() {
       to: "/ingress-groups", cta: "Открыть группы",
     },
     {
-      title: "Создать набор правил",
+      title: "Создать список доменов",
       body: "Список доменов, которые надо направлять через инфраструктуру. Можно начать со встроенного пресета.",
       done: (rules.data?.items.length ?? 0) > 0,
       to: "/rule-sets", cta: "Создать набор",
     },
     {
       title: "Создать сервис",
-      body: "Связывает набор правил с ingress- и egress-группой и задаёт TTL, порты и домен для проверки.",
+      body: "Связывает список доменов с точкой входа и точкой выхода, задаёт TTL, порты и домен для проверки.",
       done: dash.data.services.length > 0,
       to: "/services", cta: "Создать сервис",
     },
     {
-      title: "Собрать и выкатить ревизию",
+      title: "Собрать и применить конфигурацию",
       body: "Конфигурация становится неизменяемым снимком, который агенты применяют атомарно.",
       done: dash.data.active_revision !== null,
-      to: "/revisions", cta: "Открыть ревизии",
+      to: "/revisions", cta: "Открыть конфигурации",
     },
     {
       title: "Настроить устройство",
@@ -90,7 +90,7 @@ export default function Setup() {
             </div>
             <p className="small muted" style={{ marginBottom: 0, marginTop: 10 }}>
               {next ? `Следующий шаг: ${next.title.toLowerCase()}.`
-                : "Всё готово. Проверьте на устройстве, что управляемый домен резолвится в адрес ingress, а обычный — в настоящий."}
+                : "Всё готово. Проверьте на устройстве, что управляемый домен резолвится в адрес входной ноды, а обычный — в настоящий."}
             </p>
           </div>
         </div>
@@ -134,7 +134,7 @@ dig +short example.org @IP-INGRESS
 openssl s_client -connect IP-INGRESS:443 -servername УПРАВЛЯЕМЫЙ-ДОМЕН </dev/null 2>/dev/null \\
   | openssl x509 -noout -subject -issuer
 
-# 4. Сервис должен видеть IP egress-ноды
+# 4. Сервис должен видеть IP выходной ноды
 curl -s https://УПРАВЛЯЕМЫЙ-ДОМЕН/ -o /dev/null -w '%{remote_ip}\\n'`}</div>
       </Card>
     </>

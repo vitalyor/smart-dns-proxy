@@ -253,7 +253,7 @@ func instructions(p store.DeviceProfile, dohURL, dotHost string, v4 []string) st
 		fmt.Fprintf(&b, "1. Настройки → Сеть и интернет → Частный DNS.\n")
 		fmt.Fprintf(&b, "2. Выберите «Имя хоста поставщика частного DNS».\n")
 		fmt.Fprintf(&b, "3. Введите: `%s`\n\n", dotHost)
-		fmt.Fprintf(&b, "> Android принимает одно имя. Оно резолвится во все ingress-адреса (multi-A),\n")
+		fmt.Fprintf(&b, "> Android принимает одно имя. Оно резолвится во все адреса входных нод (multi-A),\n")
 		fmt.Fprintf(&b, "> поэтому при падении одной ноды устройство само переходит на другую.\n")
 		if len(v4) > 1 {
 			fmt.Fprintf(&b, ">\n> Адреса за этим именем: %s\n", strings.Join(v4, ", "))
@@ -283,7 +283,7 @@ func instructions(p store.DeviceProfile, dohURL, dotHost string, v4 []string) st
 		fmt.Fprintf(&b, "> или там, где устройство не поддерживает DoH/DoT.\n")
 	}
 	fmt.Fprintf(&b, "\n## Проверка\n\n```sh\n")
-	fmt.Fprintf(&b, "dig +short <управляемый-домен>   # должен вернуть IP ingress-ноды\n")
+	fmt.Fprintf(&b, "dig +short <управляемый-домен>   # должен вернуть IP входной ноды\n")
 	fmt.Fprintf(&b, "dig +short example.org           # должен вернуть настоящий IP\n")
 	fmt.Fprintf(&b, "curl -sI https://<управляемый-домен> | head -1\n```\n")
 	fmt.Fprintf(&b, "\n## Известные ограничения\n\n")
