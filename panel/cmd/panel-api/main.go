@@ -103,7 +103,6 @@ func main() {
 		Pusher:         push,
 		StateDir:       *stateDir,
 		DatabaseURL:    *dsn,
-		GitHubToken:    os.Getenv("GITHUB_DEPLOY_TOKEN"),
 		GitHubRepo:     os.Getenv("GITHUB_REPO"),
 	}
 	srv := api.New(db, cfg, web.Handler())
