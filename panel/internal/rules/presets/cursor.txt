@@ -1,0 +1,6 @@
+# Built-in preset: Cursor editor — auth, API and download endpoints.
+domain:cursor.com
+domain:api2.cursor.sh
+domain:api3.cursor.sh
+domain:download.cursor.sh
+domain:authenticator.cursor.sh

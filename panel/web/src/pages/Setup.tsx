@@ -15,7 +15,6 @@ type Status = {
  * instead of a one-off flow they cannot repeat.
  */
 export default function Setup() {
-  const rules = useAsync<{ items: unknown[] }>(() => api("/rule-sets"), []);
   const groupsIn = useAsync<{ items: unknown[] }>(() => api("/ingress-groups"), []);
   const groupsEg = useAsync<{ items: unknown[] }>(() => api("/egress-groups"), []);
   const dash = useAsync<Status>(() => api("/dashboard"), []);
@@ -26,7 +25,10 @@ export default function Setup() {
 
   const nodesOf = (role: string) => dash.data!.nodes.filter((n) => n.role === role).reduce((a, b) => a + b.count, 0);
 
-  const steps = [
+  const steps: {
+    title: string; body: string; done: boolean; to: string; cta: string;
+    sub?: number; subTotal?: number;
+  }[] = [
     {
       title: "Добавить входную ноду",
       body: "Сервер в России, куда устройства отправляют DNS-запросы и TLS-соединения.",
@@ -41,19 +43,15 @@ export default function Setup() {
     },
     {
       title: "Собрать группы",
-      body: "Сервисы ссылаются на группы, а не на отдельные ноды — так резерв настраивается один раз.",
+      body: "Сервисы ссылаются на группы, а не на отдельные ноды — так резерв настраивается один раз. Нужны обе: точка входа и точка выхода.",
       done: (groupsIn.data?.items.length ?? 0) > 0 && (groupsEg.data?.items.length ?? 0) > 0,
+      sub: [(groupsIn.data?.items.length ?? 0) > 0, (groupsEg.data?.items.length ?? 0) > 0].filter(Boolean).length,
+      subTotal: 2,
       to: "/ingress-groups", cta: "Открыть группы",
     },
     {
-      title: "Создать список доменов",
-      body: "Список доменов, которые надо направлять через инфраструктуру. Можно начать со встроенного пресета.",
-      done: (rules.data?.items.length ?? 0) > 0,
-      to: "/rule-sets", cta: "Создать набор",
-    },
-    {
       title: "Создать сервис",
-      body: "Связывает список доменов с точкой входа и точкой выхода, задаёт TTL, порты и домен для проверки.",
+      body: "Мастер соберёт всё за раз: домены (списком, из каталога или с GitHub), точку входа и выхода. Начните с готового сервиса из каталога.",
       done: dash.data.services.length > 0,
       to: "/services", cta: "Создать сервис",
     },
@@ -113,7 +111,10 @@ export default function Setup() {
                 <div className="small muted" style={{ marginTop: 2 }}>{s.body}</div>
               </div>
               {s.done ? <span className="badge ok">готово</span>
-                : <Link className="btn sm primary" to={s.to}>{s.cta}</Link>}
+                : <div className="row" style={{ gap: 8, flex: "none" }}>
+                    {s.subTotal && <span className="badge">{s.sub} / {s.subTotal}</span>}
+                    <Link className="btn sm primary" to={s.to}>{s.cta}</Link>
+                  </div>}
             </div>
           </li>
         ))}

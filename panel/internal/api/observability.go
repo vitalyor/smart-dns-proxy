@@ -49,8 +49,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rev, _ := store.One[store.Revision](ctx, s.DB,
-		`SELECT * FROM revisions WHERE state IN ('active','partially_active') ORDER BY sequence DESC LIMIT 1`)
+	// Pointer so "no active revision" serialises as null, not {} — the setup
+	// checklist keys "revision applied" off active_revision !== null.
+	var activeRev *store.Revision
+	if rev, err := store.One[store.Revision](ctx, s.DB,
+		`SELECT * FROM revisions WHERE state IN ('active','partially_active') ORDER BY sequence DESC LIMIT 1`); err == nil {
+		activeRev = &rev
+	}
 	pending, _ := store.Value[int](ctx, s.DB,
 		`SELECT count(*)::int FROM rule_set_versions WHERE status='awaiting_approval'`)
 	drift, _ := store.Value[int](ctx, s.DB, `
@@ -66,7 +71,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"nodes":                  nodeStats,
 		"services":               svcStats,
-		"active_revision":        rev,
+		"active_revision":        activeRev,
 		"pending_rule_approvals": pending,
 		"nodes_with_drift":       drift,
 		"nodes_stale":            stale,

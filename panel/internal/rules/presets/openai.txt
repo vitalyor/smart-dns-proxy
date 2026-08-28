@@ -1,0 +1,11 @@
+# Built-in preset: ChatGPT / OpenAI — web app, auth, API and static assets.
+# Deliberately narrow: no broad suffixes that would divert unrelated traffic.
+domain:chat.openai.com
+domain:chatgpt.com
+domain:ab.chatgpt.com
+domain:api.openai.com
+domain:auth.openai.com
+domain:auth0.openai.com
+domain:cdn.oaistatic.com
+domain:oaiusercontent.com
+domain:files.oaiusercontent.com

@@ -1,0 +1,4 @@
+# Built-in preset: Claude (Anthropic) — web app, API and console.
+domain:claude.ai
+domain:api.anthropic.com
+domain:console.anthropic.com
