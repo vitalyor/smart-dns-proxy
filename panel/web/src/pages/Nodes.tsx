@@ -131,7 +131,6 @@ export default function Nodes() {
           <div className="codeblock">{issued.install_command}</div>
           <div className="row">
             <Copyable value={issued.install_command} label="Копировать команду" />
-            <Copyable value={issued.bundle} label="Копировать только бандл" />
           </div>
           <p className="small muted" style={{ margin: 0 }}>
             Нода поднимется сервером на порту 3333 и будет ждать панель — наружу не звонит.
