@@ -69,10 +69,9 @@ fi
 
 mkdir -p "$DIR"
 if [[ ! -f "$DIR/docker-compose.yml" ]]; then
-  [[ -d "$SRC/node/deploy/$ROLE" ]] || die "не найден $SRC/node/deploy/$ROLE — запустите скрипт из распакованного репозитория"
-  cp -r "$SRC/node" "$SRC/agent" "$SRC/shared" "$SRC/go.mod" "$SRC/go.sum" "$DIR/" 2>/dev/null || true
+  [[ -f "$SRC/node/deploy/$ROLE/docker-compose.yml" ]] || die "не найден compose роли $ROLE в $SRC/node/deploy/$ROLE"
   cp "$SRC/node/deploy/$ROLE/docker-compose.yml" "$DIR/docker-compose.yml"
-  ok "файлы роли $ROLE установлены в $DIR"
+  ok "compose роли $ROLE установлен в $DIR (образы тянутся из реестра — сборка на сервере не нужна)"
 fi
 
 umask 077
@@ -89,9 +88,9 @@ ALLOW_SELF_SIGNED_TLS=0
 ENV
 chmod 600 "$DIR/.env"
 
-info "Запуск контейнеров"
+info "Загрузка образов из реестра и запуск"
 cd "$DIR"
-docker compose --env-file .env up -d --build
+docker compose --env-file .env up -d --pull always
 
 info "Ожидание, пока агент начнёт слушать порт управления"
 for _ in $(seq 1 40); do
