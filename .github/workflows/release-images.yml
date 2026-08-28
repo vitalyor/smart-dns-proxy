@@ -6,6 +6,14 @@ name: Публикация образов
 on:
   push:
     branches: [main]
+    # Собираем только когда менялся код. Doc-only коммиты образы не пересобирают,
+    # но любое изменение кода/Dockerfile/compose — пересобирает, чтобы новый код
+    # гарантированно попал в пакет.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LAUNCH-PLAN.html'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +37,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Короткий хеш коммита — им тегируем каждый образ, чтобы пакет всегда можно
+      # было привязать к конкретному коду.
+      - id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Панель
         uses: docker/build-push-action@v6
         with:
@@ -39,6 +52,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-panel:${{ env.VERSION }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-panel:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-panel:sha-${{ steps.sha.outputs.short }}
 
       - name: Нода (dns-frontend, sni-proxy, egress-relay, node-agent)
         uses: docker/build-push-action@v6
@@ -50,6 +64,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-node:${{ env.VERSION }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-node:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-node:sha-${{ steps.sha.outputs.short }}
 
       - name: Unbound
         uses: docker/build-push-action@v6
@@ -60,3 +75,4 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-unbound:${{ env.VERSION }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-unbound:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-unbound:sha-${{ steps.sha.outputs.short }}
