@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"smartdns/panel/internal/compiler"
 	"smartdns/panel/internal/store"
-	"smartdns/shared/domainset"
 	"smartdns/shared/model"
 )
 
@@ -499,6 +497,3 @@ func getSettingList(ctx context.Context, db *store.DB, key string) []string {
 	_ = json.Unmarshal(raw, &out)
 	return out
 }
-
-var _ = domainset.Entry{}
-var _ = time.Now
