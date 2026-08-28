@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # SmartDNS — установка панели или ноды одной командой.
 #
-#   sudo bash <(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh) --role ingress --bundle <BASE64>
-#   sudo bash <(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh) --role egress  --bundle <BASE64>
-#   sudo bash <(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh) --role panel --public-url https://panel.example.net
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh)" -- --role ingress
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh)" -- --role egress
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/vitalyor/smart-dns-proxy/main/install.sh)" -- --role panel --public-url https://panel.example.net
+#
+# Форма `bash -c "$(curl …)"`, а не `bash <(curl …)`: под sudo подстановка
+# процесса /dev/fd ломается (sudo закрывает дескрипторы), а command substitution
+# передаёт скрипт строкой и работает всегда.
 #
 # Скрипт НИЧЕГО не ломает: если нужный порт уже занят, он останавливается и
 # показывает, кто его держит, — а не отбирает. Все проверки идут ДО первого

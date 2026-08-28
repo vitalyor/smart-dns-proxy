@@ -20,12 +20,17 @@ const defaultRepo = "vitalyor/smart-dns-proxy"
 // the bundle interactively (paste when asked), so the secret never lands in the
 // command — and thus not in shell history or terminal logs. install.sh (from the
 // public repo) pulls prebuilt images and downloads only the role's compose file.
+//
+// The form is `sudo bash -c "$(curl …)" -- …`, not `sudo bash <(curl …)`: sudo
+// closes inherited file descriptors, so the process-substitution /dev/fd path
+// breaks under sudo. Command substitution passes the script as a string and has
+// no such problem. The `--` becomes $0; the flags start at $1.
 func installCommand(repo, role string) string {
 	if repo == "" {
 		repo = defaultRepo
 	}
 	return fmt.Sprintf(
-		"sudo bash <(curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh) --role %s",
+		`sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh)" -- --role %s`,
 		repo, role)
 }
 
