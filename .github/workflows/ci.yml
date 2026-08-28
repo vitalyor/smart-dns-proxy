@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version: "1.24.x", cache: true}
+        with: {go-version: "1.25.x", cache: true}
       # panel/web/dist — артефакт сборки, его нет в репозитории. Реальную сборку
       # фронта проверяет job «web»; здесь достаточно заглушки, чтобы //go:embed
       # скомпилировался для vet/test/build.
@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: {go-version: "1.24.x", cache: true}
+        with: {go-version: "1.25.x", cache: true}
       - run: mkdir -p panel/web/dist && printf '<!doctype html><title>ci</title>' > panel/web/dist/index.html
       - name: govulncheck
         run: |
