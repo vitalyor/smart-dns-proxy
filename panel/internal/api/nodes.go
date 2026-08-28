@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -13,6 +12,21 @@ import (
 	"smartdns/shared/model"
 	"smartdns/shared/pki"
 )
+
+// defaultRepo is where the public installer and per-role compose files live.
+const defaultRepo = "vitalyor/smart-dns-proxy"
+
+// installCommand renders the one-line node installer. The bundle carries the
+// node's identity; install.sh (fetched from the public repo) pulls the prebuilt
+// images and only downloads the role's compose file — no source, no clone, no key.
+func installCommand(repo, role, bundle string) string {
+	if repo == "" {
+		repo = defaultRepo
+	}
+	return fmt.Sprintf(
+		"sudo bash <(curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh) --role %s --bundle %s",
+		repo, role, bundle)
+}
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	type row struct {
@@ -134,20 +148,12 @@ func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request) error {
 		e.Details = deps
 		return e
 	}
-	var keyID *int64
-	_ = s.DB.QueryRow(r.Context(), `SELECT deploy_key_id FROM nodes WHERE id=$1`, id).Scan(&keyID)
 	n, err := s.DB.ExecN(r.Context(), `DELETE FROM nodes WHERE id=$1`, id)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return notFound("node")
-	}
-	// Revoke the node's deploy key so a removed node loses repo access.
-	if keyID != nil && s.Cfg.GitHubToken != "" && s.Cfg.GitHubRepo != "" {
-		if err := githubDeleteDeployKey(r.Context(), s.Cfg.GitHubToken, s.Cfg.GitHubRepo, *keyID); err != nil {
-			slog.Warn("deploy key: revoke failed", "err", err, "node", id, "key_id", *keyID)
-		}
 	}
 	s.audit(r.Context(), r, "node.deleted", "node", id, nil, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -287,17 +293,6 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 			map[string]any{"role": req.Role, "name": name, "mgmt_address": mgmt})
 		s.event(ctx, "info", "panel", "node_created", "Создана нода "+name, &nodeID, nil)
 
-		// Optionally mint a per-node read-only deploy key so the install command
-		// can clone the private repo itself. Best-effort: on any failure we fall
-		// back to the manual command and the node still exists.
-		install := fmt.Sprintf("sudo bash install-node.sh --role %s --bundle %s", req.Role, bundle.Encode())
-		deployKey, keyID, keyOK := s.provisionDeployKey(ctx, name)
-		if keyOK {
-			if _, err := s.DB.Exec(ctx, `UPDATE nodes SET deploy_key_id=$2 WHERE id=$1`, nodeID, keyID); err != nil {
-				slog.Error("deploy key: could not store id", "err", err, "node", nodeID)
-			}
-			install = deployInstallCommand(s.Cfg.GitHubRepo, req.Role, bundle.Encode(), deployKey)
-		}
 		return http.StatusCreated, map[string]any{
 			"node_id":          nodeID,
 			"name":             name,
@@ -305,8 +300,7 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 			"mgmt_address":     mgmt,
 			"bundle":           bundle.Encode(), // shown once
 			"cert_fingerprint": fp,
-			"install_command":  install,
-			"deploy_key":       keyOK, // command carries a one-time private key
+			"install_command":  installCommand(s.Cfg.GitHubRepo, req.Role, bundle.Encode()),
 		}, nil
 	})
 }

@@ -50,9 +50,8 @@ services:
       LAB_MODE: ${LAB_MODE:-0}
       LOG_LEVEL: ${LOG_LEVEL:-}
       TZ: ${TZ:-Europe/Moscow}
-      # Optional: fine-grained PAT (Administration+Contents on GITHUB_REPO only)
-      # so the panel mints a per-node read-only deploy key on node creation.
-      GITHUB_DEPLOY_TOKEN: ${GITHUB_DEPLOY_TOKEN:-}
+      # Public repo ("owner/name") the one-line node install command points at.
+      # Empty → built-in default (vitalyor/smart-dns-proxy).
       GITHUB_REPO: ${GITHUB_REPO:-}
     volumes:
       - panelstate:/var/lib/smartdns-panel
