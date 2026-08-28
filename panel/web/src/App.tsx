@@ -37,7 +37,7 @@ const NAV = [
   { to: "/egress-groups", label: "Точки выхода", Icon: IconArrowOut },
   { group: "Конфигурация" },
   { to: "/services", label: "Сервисы", Icon: IconGrid },
-  { to: "/rule-sets", label: "Списки доменов", Icon: IconList },
+  { to: "/rule-sets", label: "Общие списки", Icon: IconList },
   { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
   { to: "/devices", label: "Устройства", Icon: IconPhone },
   { group: "Наблюдение" },

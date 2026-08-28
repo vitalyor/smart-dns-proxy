@@ -12,10 +12,11 @@ type Row = { group: Group; members: Member[] };
 type Node = { id: string; name: string; role: string };
 
 const MODES: Record<string, { value: string; label: string; hint: string }[]> = {
+  // Ingress distribution happens at DNS level: the resolver returns every live
+  // node and rotates their order per answer. Primary/weighted can't be honoured
+  // over plain DNS, so there's a single mode and the selector is hidden.
   ingress: [
-    { value: "active_active", label: "Активная пара", hint: "DNS возвращает все живые ноды и меняет их порядок при каждом ответе." },
-    { value: "primary_fallback", label: "Основная и резервная", hint: "Резервная нода выдаётся только после подтверждённого отказа основной." },
-    { value: "weighted", label: "С весами", hint: "Адреса выдаются с заданной вероятностью. Точного распределения это не гарантирует." },
+    { value: "active_active", label: "Все ноды сразу", hint: "DNS возвращает адреса всех живых нод и меняет их порядок при каждом ответе — устройство выбирает и переключается само." },
   ],
   egress: [
     { value: "primary_fallback", label: "Основная и резервная", hint: "Входная нода пробует серверы по приоритету и уходит на резерв при отказе." },
@@ -162,11 +163,15 @@ function CreateGroup({ kind, onClose, onCreated }: { kind: "ingress" | "egress";
     }>
       <Field label="Название"><input className="input" autoFocus value={name}
         onChange={(e) => setName(e.target.value)} placeholder={kind === "ingress" ? "Вход РФ" : "Выход ЕС"} /></Field>
-      <Field label="Режим" hint={hint}>
-        <select className="select" value={mode} onChange={(e) => setMode(e.target.value)}>
-          {MODES[kind].map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
-      </Field>
+      {MODES[kind].length > 1 ? (
+        <Field label="Режим" hint={hint}>
+          <select className="select" value={mode} onChange={(e) => setMode(e.target.value)}>
+            {MODES[kind].map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </Field>
+      ) : (
+        <Notice kind="info" title={MODES[kind][0].label}>{MODES[kind][0].hint}</Notice>
+      )}
       {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
     </Modal>
   );
