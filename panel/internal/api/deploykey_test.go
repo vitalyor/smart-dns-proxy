@@ -44,4 +44,15 @@ func TestDeployInstallCommand(t *testing.T) {
 	if !strings.Contains(cmd, "\nSMARTDNS_KEY\n") {
 		t.Fatal("heredoc terminator must sit on its own line")
 	}
+	// The body must run in a child shell so set -e / cd cannot kill the operator's
+	// session when pasted into a terminal.
+	if !strings.HasPrefix(cmd, "sudo bash -s <<'SMARTDNS_INSTALL'\n") {
+		t.Fatalf("command must be wrapped in a child shell, got prefix %.40q", cmd)
+	}
+	if !strings.HasSuffix(cmd, "\nSMARTDNS_INSTALL") {
+		t.Fatal("command must close the wrapper heredoc")
+	}
+	if strings.HasPrefix(cmd, "set -e") {
+		t.Fatal("set -e must live inside the child shell, not at the top level")
+	}
 }
