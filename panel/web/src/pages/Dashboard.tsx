@@ -41,7 +41,7 @@ export default function Dashboard() {
         <div className="flow-title">
           <h2>Путь трафика</h2>
           <span className="eyebrow">
-            {data.active_revision ? `ревизия #${data.active_revision.sequence}` : "ревизия не применена"}
+            {data.active_revision ? `конфигурация #${data.active_revision.sequence}` : "конфигурация не применена"}
           </span>
         </div>
 
@@ -82,14 +82,14 @@ export default function Dashboard() {
       )}
 
       <div className="grid g4">
-        <Tile label="Ingress" value={`${healthy("ingress")}/${total("ingress")}`}
+        <Tile label="Входные ноды" value={`${healthy("ingress")}/${total("ingress")}`}
           note="нод принимают DNS и HTTPS" state={ingressOk ? "ok" : "bad"} />
-        <Tile label="Egress" value={`${healthy("egress")}/${total("egress")}`}
+        <Tile label="Выходные ноды" value={`${healthy("egress")}/${total("egress")}`}
           note="нод выходят к сервисам" state={egressOk ? "ok" : "bad"} />
         <Tile label="Сервисы" value={String(data.services.filter((s) => s.enabled).length)}
           note={plural(data.services.reduce((a, s) => a + s.rules, 0), "правило", "правила", "правил")} />
         <Tile label="Расхождение" value={String(data.nodes_with_drift)}
-          note="нод ещё не применили ревизию" state={data.nodes_with_drift ? "warn" : "ok"} />
+          note="нод ещё не применили конфигурацию" state={data.nodes_with_drift ? "warn" : "ok"} />
       </div>
 
       <div className="grid g2">

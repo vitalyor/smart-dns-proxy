@@ -99,7 +99,7 @@ export default function Devices() {
           <dl className="kv">
             <dt>DoH</dt><dd>{d.doh_hostname ? `https://${d.doh_hostname}${d.doh_path}` : "не настроен"}</dd>
             <dt>DoT</dt><dd>{d.dot_hostname || "не настроен"}</dd>
-            <dt>Обычный DNS</dt><dd>{d.ingress_ipv4?.join(", ") || "нет ingress-нод с IPv4"}</dd>
+            <dt>Обычный DNS</dt><dd>{d.ingress_ipv4?.join(", ") || "нет входных нод с IPv4"}</dd>
             <dt>Режим доступа</dt><dd>{d.access_mode}</dd>
           </dl>
         </Card>
@@ -138,12 +138,12 @@ export default function Devices() {
 
       {removing && (
         <Confirm title={`Удалить профиль ${removing.name}?`} danger confirmLabel="Удалить"
-          body="Токен пути перестанет приниматься после следующей сборки и выката ревизии. Устройства с этим профилем потеряют доступ к резолверу."
+          body="Токен пути перестанет приниматься после следующей сборки и применения конфигурации. Устройства с этим профилем потеряют доступ к резолверу."
           onClose={() => setRemoving(null)}
           onConfirm={async () => {
             try {
               await api(`/device-profiles/${removing.id}`, { method: "DELETE" });
-              toast({ kind: "ok", title: "Профиль удалён", body: "Соберите ревизию, чтобы отозвать токен на нодах." });
+              toast({ kind: "ok", title: "Профиль удалён", body: "Соберите конфигурацию, чтобы отозвать токен на нодах." });
               setRemoving(null); list.reload();
             } catch (e) { toast({ kind: "bad", title: "Удаление не удалось", body: errText(e) }); }
           }} />

@@ -33,12 +33,12 @@ const NAV = [
   { to: "/setup", label: "Быстрый старт", Icon: IconPlay },
   { group: "Инфраструктура" },
   { to: "/nodes", label: "Ноды", Icon: IconServer },
-  { to: "/ingress-groups", label: "Ingress-группы", Icon: IconArrowIn },
-  { to: "/egress-groups", label: "Egress-группы", Icon: IconArrowOut },
+  { to: "/ingress-groups", label: "Точки входа", Icon: IconArrowIn },
+  { to: "/egress-groups", label: "Точки выхода", Icon: IconArrowOut },
   { group: "Конфигурация" },
   { to: "/services", label: "Сервисы", Icon: IconGrid },
-  { to: "/rule-sets", label: "Наборы правил", Icon: IconList },
-  { to: "/revisions", label: "Ревизии", Icon: IconLayers },
+  { to: "/rule-sets", label: "Списки доменов", Icon: IconList },
+  { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
   { to: "/devices", label: "Устройства", Icon: IconPhone },
   { group: "Наблюдение" },
   { to: "/health", label: "Здоровье и события", Icon: IconPulse },
@@ -129,7 +129,7 @@ export default function App() {
           <div className="eyebrow">{titleOf(loc.pathname)}</div>
           <div className="spacer" />
           {me.lab_mode && (
-            <span className="badge warn" title="Egress может обращаться к приватным адресам. Только для стенда.">
+            <span className="badge warn" title="Серверы выхода могут обращаться к приватным адресам. Только для стенда.">
               лабораторный режим
             </span>
           )}

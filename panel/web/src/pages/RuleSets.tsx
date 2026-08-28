@@ -43,9 +43,9 @@ export default function RuleSets() {
   return (
     <>
       <div className="row">
-        <div><div className="eyebrow">конфигурация</div><h1>Наборы правил</h1></div>
+        <div><div className="eyebrow">конфигурация</div><h1>Списки доменов</h1></div>
         <div className="spacer" />
-        <button className="btn primary" onClick={() => setCreating(true)}><IconPlus />Новый набор</button>
+        <button className="btn primary" onClick={() => setCreating(true)}><IconPlus />Новый список</button>
       </div>
 
       <Notice kind="info" title="Ошибка загрузки никогда не стирает активный список">
@@ -59,13 +59,13 @@ export default function RuleSets() {
         : list.data!.items.length === 0 ? (
           <Card>
             <div className="empty">
-              <h3>Наборов правил пока нет</h3>
+              <h3>Списков доменов пока нет</h3>
               <p className="muted small">
-                Набор — это список доменов, которые надо направлять через инфраструктуру.
+                Список доменов, которые надо направлять через вашу инфраструктуру.
                 Можно начать со встроенного пресета и позже добавить источник на GitHub.
               </p>
               <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setCreating(true)}>
-                <IconPlus />Новый набор
+                <IconPlus />Новый список
               </button>
             </div>
           </Card>
@@ -74,7 +74,7 @@ export default function RuleSets() {
             <div className="table-wrap">
               <table className="table">
                 <thead>
-                  <tr><th>Набор</th><th>Записей</th><th>Версия</th><th>Источники</th>
+                  <tr><th>Список</th><th>Записей</th><th>Версия</th><th>Источники</th>
                     <th>Обновление</th><th>Последняя загрузка</th><th /></tr>
                 </thead>
                 <tbody>
@@ -118,13 +118,13 @@ export default function RuleSets() {
       )}
 
       {removing && (
-        <Confirm title={`Удалить набор ${removing.name}?`} danger confirmLabel="Удалить"
-          body="Все версии и загруженные записи будут удалены. Если набор используется сервисом, панель откажет в удалении."
+        <Confirm title={`Удалить список ${removing.name}?`} danger confirmLabel="Удалить"
+          body="Все версии и загруженные записи будут удалены. Если список используется сервисом, панель откажет в удалении."
           onClose={() => setRemoving(null)}
           onConfirm={async () => {
             try {
               await api(`/rule-sets/${removing.id}`, { method: "DELETE" });
-              toast({ kind: "ok", title: "Набор удалён" });
+              toast({ kind: "ok", title: "Список удалён" });
               setRemoving(null); list.reload();
             } catch (e) { toast({ kind: "bad", title: "Удаление отклонено", body: errText(e) }); }
           }} />
@@ -146,7 +146,7 @@ function CreateRuleSet({ presets, onClose, onCreated }: {
   const [busy, setBusy] = useState(false);
 
   return (
-    <Modal title="Новый набор правил" onClose={onClose} footer={
+    <Modal title="Новый список доменов" onClose={onClose} footer={
       <>
         <button className="btn" onClick={onClose}>Отмена</button>
         <button className="btn primary" disabled={busy} onClick={async () => {

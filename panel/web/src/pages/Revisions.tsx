@@ -21,7 +21,7 @@ const STATE: Record<string, { kind: string; label: string }> = {
   compiled: { kind: "direct", label: "собрана" },
   validation_failed: { kind: "bad", label: "ошибка сборки" },
   awaiting_approval: { kind: "warn", label: "ждёт подтверждения" },
-  deploying: { kind: "managed", label: "выкатывается" },
+  deploying: { kind: "managed", label: "применяется" },
   active: { kind: "ok", label: "активна" },
   partially_active: { kind: "warn", label: "частично активна" },
   superseded: { kind: "", label: "заменена" },
@@ -52,7 +52,7 @@ export default function Revisions() {
         method: "POST", body: { deploy, dry_run: false },
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      toast({ kind: "ok", title: deploy ? "Ревизия собрана и выкатывается" : "Ревизия собрана",
+      toast({ kind: "ok", title: deploy ? "Конфигурация собрана и применяется" : "Конфигурация собрана",
         body: `Сервисов: ${r.summary.services}, правил: ${r.summary.total_rules}.` });
       list.reload();
     } catch (e) { toast({ kind: "bad", title: "Сборка не удалась", body: errText(e) }); }
@@ -70,26 +70,26 @@ export default function Revisions() {
   return (
     <>
       <div className="row">
-        <div><div className="eyebrow">конфигурация</div><h1>Ревизии</h1></div>
+        <div><div className="eyebrow">конфигурация</div><h1>Конфигурации</h1></div>
         <div className="spacer" />
         <button className="btn" disabled={busy} onClick={dryRun}>Проверить без сборки</button>
         <button className="btn" disabled={busy} onClick={() => compile(false)}><IconLayers />Собрать</button>
         <button className="btn primary" disabled={busy} onClick={() => compile(true)}>
-          {busy ? <span className="spin" /> : <IconPlay />}Собрать и выкатить
+          {busy ? <span className="spin" /> : <IconPlay />}Собрать и применить
         </button>
       </div>
 
-      <Notice kind="info" title="Выкат идёт волнами">
+      <Notice kind="info" title="Применение идёт волнами">
         Первая нода каждой роли получает конфигурацию как канарейка, остальные — после её успешного отчёта.
-        Панель считает ревизию применённой, только когда агент вернул тот же SHA-256 артефакта.
+        Панель считает конфигурацию применённой, только когда агент вернул тот же SHA-256 артефакта.
       </Notice>
 
       {list.error ? <ErrorState message={list.error} onRetry={list.reload} />
         : list.loading && !list.data ? <Spinner />
         : list.data!.items.length === 0 ? (
           <Card><div className="empty">
-            <h3>Ревизий пока нет</h3>
-            <p className="muted small">Ревизия — это снимок всей конфигурации. Соберите первую, когда появятся сервис, группы и ноды.</p>
+            <h3>Конфигураций пока нет</h3>
+            <p className="muted small">Конфигурация — это снимок всех настроек. Соберите первую, когда появятся сервис, группы и ноды.</p>
           </div></Card>
         ) : (
           <Card tight>
@@ -118,24 +118,24 @@ export default function Revisions() {
                         <td className="actions">
                           <button className="btn sm ghost" onClick={async () => {
                             try { setDetail(await api(`/revisions/${r.id}`)); }
-                            catch (e) { toast({ kind: "bad", title: "Не удалось открыть ревизию", body: errText(e) }); }
+                            catch (e) { toast({ kind: "bad", title: "Не удалось открыть конфигурацию", body: errText(e) }); }
                           }}>Детали</button>
                           {["compiled", "active", "partially_active", "rolled_back", "superseded"].includes(r.state) && (
                             <button className="btn sm" onClick={async () => {
                               try {
                                 await api(`/revisions/${r.id}/deploy`, {
                                   method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
-                                toast({ kind: "ok", title: `Выкат ревизии #${r.sequence} начат` });
+                                toast({ kind: "ok", title: `Применение конфигурации #${r.sequence} начато` });
                                 list.reload();
-                              } catch (e) { toast({ kind: "bad", title: "Выкат отклонён", body: errText(e) }); }
-                            }}>Выкатить</button>
+                              } catch (e) { toast({ kind: "bad", title: "Применение отклонено", body: errText(e) }); }
+                            }}>Применить</button>
                           )}
                           {["active", "partially_active"].includes(r.state) && (
                             <button className="btn sm ghost danger" onClick={async () => {
                               try {
                                 const v = await api<{ target_revision_id: string }>(`/revisions/${r.id}/rollback`, {
                                   method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
-                                toast({ kind: "warn", title: "Откат запущен", body: `Целевая ревизия: ${shortHash(v.target_revision_id)}` });
+                                toast({ kind: "warn", title: "Откат запущен", body: `Целевая конфигурация: ${shortHash(v.target_revision_id)}` });
                                 list.reload();
                               } catch (e) { toast({ kind: "bad", title: "Откат невозможен", body: errText(e) }); }
                             }}><IconRotate />Откатить</button>
@@ -154,13 +154,13 @@ export default function Revisions() {
         <Modal title="Предварительная проверка" onClose={() => setPreview(null)} wide
           footer={<button className="btn" onClick={() => setPreview(null)}>Закрыть</button>}>
           <Notice kind="info" title="Ничего не изменено">
-            Это сухой прогон компилятора: артефакты не сохранены и на ноды не отправлены.
+            Это пробная сборка: конфигурация не сохранена и на серверы не отправлена.
           </Notice>
           <div className="grid g4">
             <Tile label="Сервисов" value={preview.summary.services} />
             <Tile label="Правил" value={preview.summary.total_rules} />
-            <Tile label="Ingress" value={preview.summary.ingress_nodes} />
-            <Tile label="Egress" value={preview.summary.egress_nodes} />
+            <Tile label="Точки входа" value={preview.summary.ingress_nodes} />
+            <Tile label="Точки выхода" value={preview.summary.egress_nodes} />
           </div>
           {preview.warnings?.length > 0 && (
             <Notice kind="warn" title="Предупреждения">
@@ -173,7 +173,7 @@ export default function Revisions() {
       )}
 
       {detail && (
-        <Modal title={`Ревизия #${detail.revision.sequence}`} onClose={() => setDetail(null)} wide
+        <Modal title={`Конфигурация #${detail.revision.sequence}`} onClose={() => setDetail(null)} wide
           footer={<button className="btn" onClick={() => setDetail(null)}>Закрыть</button>}>
           <dl className="kv">
             <dt>Хеш модели</dt><dd>{detail.revision.model_hash || "—"}</dd>
@@ -182,7 +182,7 @@ export default function Revisions() {
           </dl>
 
           {detail.revision.summary?.warnings?.length ? (
-            <Notice kind="warn" title="Предупреждения компилятора">
+            <Notice kind="warn" title="Предупреждения при сборке">
               <ul style={{ margin: "4px 0 0 16px", padding: 0 }}>
                 {detail.revision.summary.warnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>

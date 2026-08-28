@@ -40,7 +40,7 @@ export default function Nodes() {
 
       <Notice kind="info" title="Ноды работают автономно">
         Если панель недоступна, нода продолжает обслуживать трафик на последней проверенной конфигурации.
-        Расхождение между назначенной и применённой ревизией видно в колонке «Ревизия».
+        Расхождение между назначенной и применённой конфигурацией видно в колонке «Конфигурация».
       </Notice>
 
       <Card title="Зарегистрированные ноды" tight>
@@ -50,7 +50,7 @@ export default function Nodes() {
             <div className="empty">
               <h3>Нод пока нет</h3>
               <p className="muted small">
-                Добавьте ноду: панель выдаст команду с бандлом. Выполните её на сервере —
+                Добавьте ноду: панель выдаст команду и ключ подключения. Выполните её на сервере —
                 панель сама подключится к ноде на её порт 3333.
               </p>
               <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setCreating(true)}>
@@ -63,7 +63,7 @@ export default function Nodes() {
                 <thead>
                   <tr>
                     <th>Нода</th><th>Роль</th><th>Статус</th><th>Адреса</th>
-                    <th>Ревизия</th><th>Heartbeat</th><th>Группы</th><th />
+                    <th>Конфигурация</th><th>Heartbeat</th><th>Группы</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -126,8 +126,8 @@ export default function Nodes() {
       {issued && (
         <Modal title="Команда установки ноды" onClose={() => setIssued(null)} wide
           footer={<button className="btn primary" onClick={() => setIssued(null)}>Готово</button>}>
-          <Notice kind="warn" title="Бандл показывается один раз">
-            Бандл несёт TLS-идентичность ноды и пин панели; в базе он не хранится.
+          <Notice kind="warn" title="Ключ подключения показывается один раз">
+            Ключ подключения несёт идентичность сервера и привязку к панели; в базе он не хранится.
             Потеряли — удалите ноду и создайте заново.
           </Notice>
 
@@ -135,9 +135,9 @@ export default function Nodes() {
           <div className="codeblock">{issued.install_command}</div>
           <Copyable value={issued.install_command} label="Копировать команду" />
 
-          <div className="eyebrow" style={{ marginTop: 18 }}>Шаг 2 — вставьте бандл, когда установщик попросит</div>
+          <div className="eyebrow" style={{ marginTop: 18 }}>Шаг 2 — вставьте ключ подключения, когда установщик попросит</div>
           <div className="codeblock" style={{ maxHeight: 160, overflow: "auto", wordBreak: "break-all" }}>{issued.bundle}</div>
-          <Copyable value={issued.bundle} label="Копировать бандл" />
+          <Copyable value={issued.bundle} label="Копировать ключ" />
 
           <p className="small muted" style={{ margin: "14px 0 0" }}>
             Секрет вводится по запросу — он не попадёт в историю команд.
@@ -196,10 +196,10 @@ function CreateNode({ onClose, onCreated }: {
             );
             onCreated(v);
           } catch (e) { setError(errText(e)); } finally { setBusy(false); }
-        }}>{busy ? <span className="spin" /> : null}Создать и выдать бандл</button>
+        }}>{busy ? <span className="spin" /> : null}Создать и выдать ключ</button>
       </>
     }>
-      <Field label="Роль ноды" hint="Ingress принимает DNS и HTTPS от устройств. Egress выходит к сервисам за рубежом.">
+      <Field label="Роль ноды" hint="Входная нода принимает DNS и HTTPS от устройств. Выходная — выходит к сайтам за рубежом.">
         <select className="select" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="ingress">ingress — точка входа</option>
           <option value="egress">egress — точка выхода</option>
@@ -218,7 +218,7 @@ function CreateNode({ onClose, onCreated }: {
           onChange={(e) => setIpv4(e.target.value)} />
       </Field>
       {role === "egress" && (
-        <Field label="Порт relay" hint="Куда ingress подключаются по mTLS.">
+        <Field label="Порт relay" hint="Куда входные ноды подключаются по защищённому каналу.">
           <input className="input num" type="number" value={relayPort}
             onChange={(e) => setRelayPort(Number(e.target.value))} />
         </Field>
@@ -265,7 +265,7 @@ function EditNode({ node, onClose, onSaved }: { node: Node; onClose: () => void;
         <input className="input mono" value={v6} onChange={(e) => setV6(e.target.value)} placeholder="2001:db8::5" />
       </Field>
       {node.role === "egress" && (
-        <Field label="Адрес туннеля" hint="host:port, куда ingress-ноды подключаются по mTLS.">
+        <Field label="Адрес туннеля" hint="host:port, куда входные ноды подключаются по защищённому каналу.">
           <input className="input mono" value={relay} onChange={(e) => setRelay(e.target.value)} placeholder="198.51.100.9:8443" />
         </Field>
       )}

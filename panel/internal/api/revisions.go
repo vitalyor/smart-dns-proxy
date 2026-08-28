@@ -176,7 +176,7 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 	b := s.builder()
 	for _, sv := range svcs {
 		if sv.ActiveVersionID == nil {
-			return nil, "", fmt.Errorf("у сервиса %q нет активной версии набора правил", sv.Name)
+			return nil, "", fmt.Errorf("у сервиса %q нет активной версии списка доменов", sv.Name)
 		}
 		entries, err := b.Entries(ctx, *sv.ActiveVersionID)
 		if err != nil {
@@ -187,14 +187,14 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 			return nil, "", err
 		}
 		if len(ingressNodes) == 0 {
-			return nil, "", fmt.Errorf("у сервиса %q не выбрана ingress-группа или она пуста", sv.Name)
+			return nil, "", fmt.Errorf("у сервиса %q не выбрана точка входа или она пуста", sv.Name)
 		}
 		egMembers, err := egressMembers(ctx, s.DB, sv.EgressGroupID)
 		if err != nil {
 			return nil, "", err
 		}
 		if len(egMembers) == 0 {
-			return nil, "", fmt.Errorf("у сервиса %q не выбрана egress-группа или она пуста", sv.Name)
+			return nil, "", fmt.Errorf("у сервиса %q не выбрана точка выхода или она пуста", sv.Name)
 		}
 		ports := make([]int, 0, len(sv.AllowedPorts))
 		for _, p := range sv.AllowedPorts {
@@ -340,7 +340,7 @@ func (s *Server) startRollout(ctx context.Context, revisionID string) error {
 		return err
 	}
 	if rev.State == "validation_failed" {
-		return conflictErr("ревизия не прошла валидацию и не может быть развёрнута")
+		return conflictErr("конфигурация не прошла проверку и не может быть применена")
 	}
 	type art struct {
 		NodeID string `db:"node_id"`
@@ -353,7 +353,7 @@ func (s *Server) startRollout(ctx context.Context, revisionID string) error {
 		return err
 	}
 	if len(arts) == 0 {
-		return conflictErr("у ревизии нет артефактов")
+		return conflictErr("у конфигурации нет данных для применения")
 	}
 	seenRole := map[string]bool{}
 	tx, err := s.DB.Begin(ctx)
@@ -388,7 +388,7 @@ func (s *Server) startRollout(ctx context.Context, revisionID string) error {
 		return err
 	}
 	s.event(ctx, "info", "rollout", "deploy_started",
-		fmt.Sprintf("Начато развёртывание ревизии #%d на %d нод", rev.Sequence, len(arts)), nil, nil)
+		fmt.Sprintf("Начато применение конфигурации #%d на %d нод", rev.Sequence, len(arts)), nil, nil)
 	// Push to every target now; unreachable nodes are reconciled by the poll
 	// loop. Detached from the request so a slow node never delays the response.
 	go s.pushRevision(revisionID)
@@ -404,7 +404,7 @@ func (s *Server) rollbackRevision(w http.ResponseWriter, r *http.Request) error 
 			WHERE state IN ('active','superseded','partially_active') AND id <> $1 AND activated_at IS NOT NULL
 			ORDER BY activated_at DESC LIMIT 1`, id)
 		if err != nil {
-			return 0, nil, conflictErr("нет предыдущей активной ревизии для отката")
+			return 0, nil, conflictErr("нет предыдущей конфигурации для отката")
 		}
 		if err := s.startRollout(r.Context(), prev); err != nil {
 			return 0, nil, err
@@ -414,7 +414,7 @@ func (s *Server) rollbackRevision(w http.ResponseWriter, r *http.Request) error 
 			return 0, nil, err
 		}
 		s.audit(r.Context(), r, "revision.rolled_back", "revision", id, nil, map[string]any{"target": prev})
-		s.event(r.Context(), "warn", "rollout", "rollback", "Выполнен откат на предыдущую ревизию", nil, nil)
+		s.event(r.Context(), "warn", "rollout", "rollback", "Выполнен откат на предыдущую конфигурацию", nil, nil)
 		return http.StatusAccepted, map[string]string{"status": "rolling_back", "target_revision_id": prev}, nil
 	})
 }

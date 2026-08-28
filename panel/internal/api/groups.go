@@ -17,9 +17,9 @@ type groupKind struct {
 }
 
 var ingressKind = groupKind{"ingress_groups", "ingress_group_members", "ingress",
-	[]string{"active_active", "primary_fallback", "weighted"}, "ingress-группа"}
+	[]string{"active_active", "primary_fallback", "weighted"}, "точка входа"}
 var egressKind = groupKind{"egress_groups", "egress_group_members", "egress",
-	[]string{"primary_fallback", "weighted", "lowest_latency", "manual_fixed"}, "egress-группа"}
+	[]string{"primary_fallback", "weighted", "lowest_latency", "manual_fixed"}, "точка выхода"}
 
 func (s *Server) listGroups(k groupKind) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
