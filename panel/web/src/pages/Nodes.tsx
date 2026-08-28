@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, ago, timeTitle } from "../api";
 import {
   Card, Confirm, Copyable, ErrorState, Field, Modal, Notice, Spinner,
-  StatusBadge, errText, useAsync, useToast,
+  StatusBadge, errText, usePoll, useToast,
 } from "../ui";
 import { IconPlus, IconRefresh, IconTrash } from "../icons";
 
@@ -16,7 +16,9 @@ type Node = {
 };
 
 export default function Nodes() {
-  const nodes = useAsync<{ items: Node[] }>(() => api("/nodes"), []);
+  // Live status: re-poll every 5s. Data is swapped in place, so the table never
+  // flickers to a spinner after the first load (see the guard below).
+  const nodes = usePoll<{ items: Node[] }>(() => api("/nodes"), 5000, []);
   const [creating, setCreating] = useState(false);
   const [issued, setIssued] = useState<{ name: string; role: string; install_command: string; bundle: string } | null>(null);
   const [removing, setRemoving] = useState<Node | null>(null);
@@ -42,8 +44,8 @@ export default function Nodes() {
       </Notice>
 
       <Card title="Зарегистрированные ноды" tight>
-        {nodes.error ? <ErrorState message={nodes.error} onRetry={nodes.reload} />
-          : nodes.loading ? <Spinner />
+        {nodes.error && !nodes.data ? <ErrorState message={nodes.error} onRetry={nodes.reload} />
+          : nodes.loading && !nodes.data ? <Spinner />
           : nodes.data!.items.length === 0 ? (
             <div className="empty">
               <h3>Нод пока нет</h3>
