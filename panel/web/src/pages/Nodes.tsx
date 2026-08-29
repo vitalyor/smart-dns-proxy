@@ -27,6 +27,7 @@ export default function Nodes() {
   const [issued, setIssued] = useState<{ name: string; role: string; install_command: string; bundle: string } | null>(null);
   const [removing, setRemoving] = useState<Node | null>(null);
   const [editing, setEditing] = useState<Node | null>(null);
+  const [certNode, setCertNode] = useState<Node | null>(null);
   const toast = useToast();
 
 
@@ -133,6 +134,9 @@ export default function Nodes() {
                           <td className="tiny mono dim">{n.groups?.length ? n.groups.join(", ") : "—"}</td>
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
+                            {n.role === "ingress" && (
+                              <button className="btn sm ghost" onClick={() => setCertNode(n)}>Сертификат</button>
+                            )}
                             <button className="btn sm ghost" onClick={async () => {
                               try {
                                 await api(`/nodes/${n.id}/maintenance`, {
@@ -208,7 +212,83 @@ export default function Nodes() {
         <EditNode node={editing} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); nodes.reload(); }} />
       )}
+
+      {certNode && (
+        <CertModal node={certNode} onClose={() => setCertNode(null)}
+          onIssued={() => nodes.reload()} />
+      )}
     </>
+  );
+}
+
+// CertModal issues a DoT/DoH certificate for an ingress node via the panel →
+// node ACME HTTP-01 flow. The node opens :80 only for the challenge.
+function CertModal({ node, onClose, onIssued }: {
+  node: Node; onClose: () => void; onIssued: () => void;
+}) {
+  const [domain, setDomain] = useState("");
+  const [email, setEmail] = useState("");
+  const [force, setForce] = useState(false);
+  const [staging, setStaging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; not_after?: string; domain?: string; error?: string } | null>(null);
+  const toast = useToast();
+
+  const issue = async () => {
+    setBusy(true); setError(""); setResult(null);
+    try {
+      const r = await api<{ ok: boolean; not_after?: string; domain?: string; error?: string }>(
+        `/nodes/${node.id}/certificate`,
+        { method: "POST", body: { domain: domain.trim(), email: email.trim(), force, staging } },
+      );
+      setResult(r);
+      if (r.ok) { toast({ kind: "ok", title: "Сертификат выпущен", body: `Действует до ${r.not_after}` }); onIssued(); }
+    } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal title={`Сертификат для ${node.name}`} onClose={onClose} footer={
+      <>
+        <button className="btn" onClick={onClose}>Закрыть</button>
+        <button className="btn primary" disabled={busy || !domain.trim()} onClick={issue}>
+          {busy ? <span className="spin" /> : null}Выпустить
+        </button>
+      </>
+    }>
+      <Notice kind="info" title="Как это работает">
+        Панель попросит ноду выпустить сертификат Let’s Encrypt по проверке HTTP-01. Нода на
+        несколько секунд откроет порт 80 для проверки и сразу закроет его. Нужно, чтобы домен
+        A-записью указывал на эту ноду, а порт 80 был доступен из интернета. Новый сертификат
+        dns-frontend подхватит сам, без перезапуска.
+      </Notice>
+      <Field label="Домен" hint="Имя, по которому устройства обращаются к DoT/DoH.">
+        <input className="input mono" autoFocus value={domain} placeholder="dns.example.com"
+          onChange={(e) => setDomain(e.target.value)} />
+      </Field>
+      <Field label="Email для Let’s Encrypt" hint="Необязательно. Туда придут напоминания об истечении.">
+        <input className="input mono" value={email} placeholder="you@example.com"
+          onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <label className="check">
+        <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+        Перевыпустить принудительно, даже если текущий сертификат ещё годен
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={staging} onChange={(e) => setStaging(e.target.checked)} />
+        Тестовый режим (staging) — без лимитов, но браузеры такому не доверяют
+      </label>
+      {result && !result.ok && (
+        <div className="notice bad" role="alert"><span className="notice-bar" />
+          <div className="n-body">Не удалось: {result.error}</div></div>
+      )}
+      {result && result.ok && (
+        <Notice kind="info" title="Готово">
+          Сертификат для {result.domain} выпущен, действует до {result.not_after}.
+        </Notice>
+      )}
+      {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
+    </Modal>
   );
 }
 

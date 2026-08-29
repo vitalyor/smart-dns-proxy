@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
 import { IconPlus, IconTrash } from "../icons";
@@ -423,11 +424,17 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
         </Field>
       </div>
       <div className="grid g3">
-        <Field label="Список доменов">
+        <Field label="Список доменов" hint={ruleSetId ? undefined : "Добавить или убрать домены можно после выбора списка."}>
           <select className="select" value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)}>
             <option value="">— не выбран —</option>
             {ruleSets.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
+          {ruleSetId && (
+            <Link className="linklike tiny" to={`/rule-sets/${ruleSetId}`} onClick={onClose}
+              style={{ display: "inline-block", marginTop: 6 }}>
+              Изменить домены этого списка →
+            </Link>
+          )}
         </Field>
         <Field label="Точка входа">
           <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>

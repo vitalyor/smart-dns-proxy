@@ -29,7 +29,7 @@ import (
 )
 
 // Version is the agent build version, reported to the panel in health.
-var Version = "2.0.1"
+var Version = "2.0.2"
 
 // Config controls the agent runtime.
 type Config struct {
@@ -38,6 +38,14 @@ type Config struct {
 	Role          string
 	KeepRevisions int
 	Level         *logging.Level
+
+	// TLSDir is where panel-issued DoT/DoH certificates are written; the
+	// dns-frontend mounts the same directory read-only and hot-reloads them.
+	// Empty disables the /v1/cert/issue endpoint.
+	TLSDir string
+	// ACMEHTTPAddr is the address the HTTP-01 challenge server binds, but only
+	// for the few seconds an issuance runs — it is closed again immediately.
+	ACMEHTTPAddr string
 }
 
 // Agent is the running node agent (an HTTPS server).
@@ -50,6 +58,8 @@ type Agent struct {
 	panelFP  string // pinned panel client-cert fingerprint from the bundle
 	degraded bool
 	lastErr  string
+
+	certMu sync.Mutex // serialises cert issuance so two never fight over :80
 }
 
 // State is persisted between restarts.
@@ -165,6 +175,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/config", a.wrap(a.handleConfig))
 	mux.HandleFunc("GET /v1/health", a.wrap(a.handleHealth))
+	mux.HandleFunc("POST /v1/cert/issue", a.wrap(a.handleCert))
 
 	srv := &http.Server{
 		Addr:    a.cfg.ListenAddr,

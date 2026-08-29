@@ -53,7 +53,7 @@ docker compose version >/dev/null 2>&1 || die "нужен Docker Compose v2"
 # --- preflight ---------------------------------------------------------------
 info "Проверка портов и времени"
 need_ports=("$MGMT_PORT")
-if [[ "$ROLE" == "ingress" ]]; then need_ports+=(53 443 853 "$DOH_PORT"); else need_ports+=("$RELAY_PORT"); fi
+if [[ "$ROLE" == "ingress" ]]; then need_ports+=(53 80 443 853 "$DOH_PORT"); else need_ports+=("$RELAY_PORT"); fi
 for p in "${need_ports[@]}"; do
   if command -v ss >/dev/null && ss -lnt "sport = :$p" 2>/dev/null | grep -q LISTEN; then
     die "порт $p занят (частая причина на 53: systemd-resolved — отключите DNSStubListener)"
@@ -93,7 +93,7 @@ NODE_BUNDLE=$BUNDLE
 MGMT_BIND=$MGMT_PORT
 RELAY_PORT=$RELAY_PORT
 DOH_PORT=$DOH_PORT
-SMARTDNS_VERSION=2.0.1
+SMARTDNS_VERSION=2.0.2
 LOG_LEVEL=
 LOG_MAX_SIZE=10m
 LOG_MAX_FILE=3
@@ -135,6 +135,7 @@ if [[ "$ROLE" == "ingress" ]]; then
 cat <<CHECK
   Открыть на этой ноде для устройств:
        ufw allow 853/tcp                       # DoT (Android Private DNS)
+       ufw allow 80/tcp                        # ACME HTTP-01 (выпуск сертификата из панели)
        ufw allow from <VPN-подсеть> to any port 53   # обычный DNS только для своих
        # 443 для SNI-прокси и DoH откройте согласно вашей раскладке
 CHECK

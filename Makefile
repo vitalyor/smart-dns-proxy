@@ -1,6 +1,6 @@
 # SmartDNS — сборка, тесты и локальный стенд.
 SHELL := /bin/bash
-VERSION ?= 2.0.1
+VERSION ?= 2.0.2
 GOFLAGS ?= -trimpath
 LDFLAGS := -s -w -X main.version=$(VERSION)
 LAB := deploy/examples/lab/docker-compose.yml
