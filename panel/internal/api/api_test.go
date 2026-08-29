@@ -117,7 +117,7 @@ func TestSlugify(t *testing.T) {
 		"Gemini":         "gemini",
 		"ChatGPT Plus!":  "chatgpt-plus",
 		"  Claude  AI  ": "claude-ai",
-		"Джемини":        "dzhemini",   // Cyrillic transliterated, not dropped
+		"Джемини":        "dzhemini", // Cyrillic transliterated, not dropped
 		"Мой Сервис":     "moi-servis",
 		"2ip.io":         "2ip-io",
 		"!!!":            "", // nothing latinizable → empty, caller rejects
