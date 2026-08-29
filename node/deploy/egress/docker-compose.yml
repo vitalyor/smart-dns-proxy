@@ -11,12 +11,12 @@ x-logging: &logging
     max-file: "${LOG_MAX_FILE:-3}"
 
 x-node-image: &node-image
-  image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-2.0.0}
+  image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-2.0.1}
   build:
     context: ../../..
     dockerfile: node/deploy/Dockerfile
     args:
-      VERSION: ${SMARTDNS_VERSION:-2.0.0}
+      VERSION: ${SMARTDNS_VERSION:-2.0.1}
   restart: unless-stopped
   logging: *logging
   read_only: true
