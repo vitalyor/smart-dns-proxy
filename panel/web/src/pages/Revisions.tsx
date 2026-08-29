@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, fmtTime, shortHash, timeTitle } from "../api";
+import { api, fmtTime, plural, shortHash, timeTitle } from "../api";
 import { Card, ErrorState, Modal, Notice, Spinner, errText, usePoll, useToast } from "../ui";
 import { IconLayers, IconPlay, IconRotate } from "../icons";
 
@@ -109,7 +109,7 @@ export default function Revisions() {
                           {r.error && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>{r.error}</div>}
                         </td>
                         <td className="small">
-                          {sum ? <>{sum.services} сервисов · {sum.total_rules} правил · {sum.ingress_nodes}+{sum.egress_nodes} нод</>
+                          {sum ? <>{plural(sum.services, "сервис", "сервиса", "сервисов")} · {plural(sum.total_rules, "правило", "правила", "правил")} · {sum.ingress_nodes}+{sum.egress_nodes} {plural(sum.ingress_nodes + sum.egress_nodes, "нода", "ноды", "нод")}</>
                             : <span className="dim">—</span>}
                         </td>
                         <td className="hash">{shortHash(r.model_hash)}</td>

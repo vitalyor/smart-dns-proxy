@@ -117,9 +117,18 @@ func TestSlugify(t *testing.T) {
 		"Gemini":         "gemini",
 		"ChatGPT Plus!":  "chatgpt-plus",
 		"  Claude  AI  ": "claude-ai",
+		"Джемини":        "dzhemini",   // Cyrillic transliterated, not dropped
+		"Мой Сервис":     "moi-servis",
+		"2ip.io":         "2ip-io",
+		"!!!":            "", // nothing latinizable → empty, caller rejects
 	} {
 		if got := slugify(in); got != want {
 			t.Fatalf("slugify(%q) = %q, want %q", in, got, want)
 		}
+	}
+	// Long Cyrillic name must stay within slugRe's 40-char cap and still match.
+	long := slugify("Очень Длинное Название Сервиса Для Проверки Обрезки")
+	if len(long) > 40 || !slugRe.MatchString(long) {
+		t.Fatalf("capped slug invalid: %d %q", len(long), long)
 	}
 }
