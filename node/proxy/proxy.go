@@ -34,12 +34,22 @@ type svcRoute struct {
 
 // Proxy is the ingress TCP:443 SNI dispatcher.
 type Proxy struct {
-	mu      sync.RWMutex
-	routes  []svcRoute
-	cfg     *model.NodeConfig
-	tlsCfg  *tls.Config
-	active  atomic.Int64
-	maxSess int64
+	mu         sync.RWMutex
+	routes     []svcRoute
+	cfg        *model.NodeConfig
+	tlsCfg     *tls.Config
+	active     atomic.Int64
+	maxSess    int64
+	dohHost    string // SNI of the local DoH server, forwarded to dohBackend on :443
+	dohBackend string // where the DoH listener lives, e.g. "dns-frontend:8443"
+}
+
+// SetDoHBackend lets connections whose SNI equals the DoH hostname be forwarded
+// to the local DoH listener, so DoH can share :443 with managed HTTPS on one IP.
+func (p *Proxy) SetDoHBackend(addr string) {
+	p.mu.Lock()
+	p.dohBackend = addr
+	p.mu.Unlock()
 }
 
 // New builds a proxy. tlsCfg must carry the node's client certificate so the
@@ -67,6 +77,7 @@ func (p *Proxy) Apply(c *model.NodeConfig) {
 		})
 	}
 	p.routes, p.cfg = routes, c
+	p.dohHost = stripPort(c.DNS.DoHHostname)
 	p.maxSess = int64(c.Ingress.MaxSessions)
 	if p.maxSess <= 0 {
 		p.maxSess = 10000
@@ -171,6 +182,11 @@ func (p *Proxy) handle(c net.Conn) {
 	}
 	route := p.lookup(host)
 	if route == nil {
+		// DoH shares :443 with managed HTTPS on a single IP: a ClientHello for
+		// the DoH hostname is forwarded verbatim to the local DoH listener.
+		if p.dohForward(c, host, raw) {
+			return
+		}
 		// This is the guard that stops the ingress being an open TCP proxy.
 		mReject.Inc("reason", "sni_not_managed")
 		// The server name appears only at debug level: it is metadata about
@@ -205,6 +221,43 @@ func (p *Proxy) handle(c net.Conn) {
 	mBytes.Add(a2b+int64(len(raw)), "service", route.svc.Slug, "direction", "up")
 	mBytes.Add(b2a, "service", route.svc.Slug, "direction", "down")
 	_ = tgt
+}
+
+// dohForward tunnels a DoH-hostname ClientHello to the local DoH listener. It
+// returns true when the SNI matched DoH (whether or not the backend answered),
+// so the caller does not also count it as an unmanaged rejection.
+func (p *Proxy) dohForward(c net.Conn, host string, raw []byte) bool {
+	p.mu.RLock()
+	dohHost, backend := p.dohHost, p.dohBackend
+	idle := time.Duration(p.cfg.Ingress.IdleTimeoutSec) * time.Second
+	p.mu.RUnlock()
+	if dohHost == "" || backend == "" || host != dohHost {
+		return false
+	}
+	up, err := net.DialTimeout("tcp", backend, 5*time.Second)
+	if err != nil {
+		mReject.Inc("reason", "doh_backend_unreachable")
+		slog.Warn("DoH backend unreachable", "backend", backend, "err", err)
+		return true
+	}
+	if _, err := up.Write(raw); err != nil {
+		_ = up.Close()
+		return true
+	}
+	mConn.Inc("service", "_doh", "result", "ok")
+	if idle <= 0 {
+		idle = 300 * time.Second
+	}
+	tunnel.Splice(c, up, idle)
+	return true
+}
+
+// stripPort returns the host part of "host" or "host:port".
+func stripPort(s string) string {
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		return h
+	}
+	return s
 }
 
 func reasonOf(err error) string {

@@ -89,14 +89,22 @@ func main() {
 
 	var tlsCfg *tls.Config
 	if *dotAddr != "" || *dohAddr != "" {
-		names := []string{cfg.DNS.DoTHostname, cfg.DNS.DoHHostname}
-		tlsCfg, err = tlsutil.ServerConfig(*certFile, *keyFile, names)
+		if *certFile != "" && *keyFile != "" {
+			tlsCfg, err = tlsutil.ReloadingServerConfig(*certFile, *keyFile)
+		} else {
+			// No cert files: only self-signed lab mode can produce one.
+			names := []string{cfg.DNS.DoTHostname, cfg.DNS.DoHHostname}
+			tlsCfg, err = tlsutil.ServerConfig(*certFile, *keyFile, names)
+		}
 		if err != nil {
-			slog.Error("tls setup failed", "err", err)
-			os.Exit(1)
+			// Missing/broken TLS must not take down plain DNS on :53. DoT/DoH are
+			// simply skipped until a certificate is provided.
+			slog.Warn("DoT/DoH disabled: TLS not configured; plain DNS on :53 stays up",
+				"err", err, "hint", "set TLS_CERT_FILE/TLS_KEY_FILE (or ALLOW_SELF_SIGNED_TLS=1 for lab)")
+			tlsCfg = nil
 		}
 	}
-	if *dotAddr != "" {
+	if *dotAddr != "" && tlsCfg != nil {
 		c := tlsCfg.Clone()
 		c.NextProtos = []string{"dot"}
 		start(srv.ListenTLS(*dotAddr, c), "dot")
@@ -111,7 +119,7 @@ func main() {
 		w.Write([]byte(`{"status":"ok","revision":"` + c.RevisionID + `","services":` + itoa(len(c.Services)) + `}`))
 	})
 
-	if *dohAddr != "" {
+	if *dohAddr != "" && tlsCfg != nil {
 		h := tlsCfg.Clone()
 		h.NextProtos = []string{"h2", "http/1.1"}
 		go serveHTTP(&http.Server{Addr: *dohAddr, Handler: mux, TLSConfig: h,

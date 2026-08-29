@@ -157,6 +157,30 @@ export function Field({ label, hint, error, children }: {
   );
 }
 
+/**
+ * Segmented radio group for a fixed, non-dynamic set of options — clearer and
+ * more tappable than a <select>. Shows the selected option's hint underneath.
+ */
+export function Segmented<T extends string>({ value, onChange, options, wide, tone }: {
+  value: T; onChange: (v: T) => void;
+  options: { value: T; label: string; hint?: string }[];
+  wide?: boolean; tone?: "direct" | "managed" | "neutral";
+}) {
+  const sel = options.find((o) => o.value === value);
+  return (
+    <>
+      <div className={`seg${wide ? " wide" : ""}${tone ? ` tone-${tone}` : ""}`} role="radiogroup">
+        {options.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={value === o.value}
+            className={`seg-btn${value === o.value ? " sel" : ""}`}
+            onClick={() => onChange(o.value)}>{o.label}</button>
+        ))}
+      </div>
+      {sel?.hint && <div className="seg-hint">{sel.hint}</div>}
+    </>
+  );
+}
+
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean;
 }) {

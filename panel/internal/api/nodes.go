@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"smartdns/panel/internal/auth"
+	"smartdns/panel/internal/pusher"
 	"smartdns/panel/internal/store"
 	"smartdns/shared/model"
 	"smartdns/shared/pki"
@@ -37,11 +38,13 @@ func installCommand(repo, role string) string {
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	type row struct {
 		store.Node
-		DesiredSeq *int64   `db:"desired_sequence" json:"desired_sequence"`
-		Groups     []string `db:"groups" json:"groups"`
+		DesiredSeq   *int64   `db:"desired_sequence" json:"desired_sequence"`
+		Groups       []string `db:"groups" json:"groups"`
+		CertDaysLeft *int     `db:"cert_days_left" json:"cert_days_left"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
 		SELECT n.*, dr.sequence AS desired_sequence,
+		       NULLIF(n.health->>'cert_days_left','')::int AS cert_days_left,
 		       COALESCE(
 		         (SELECT array_agg(g.name ORDER BY g.name) FROM ingress_group_members m
 		            JOIN ingress_groups g ON g.id = m.group_id WHERE m.node_id = n.id)
@@ -190,6 +193,43 @@ func (s *Server) nodeMaintenance(w http.ResponseWriter, r *http.Request) error {
 	s.event(r.Context(), "info", "panel", "node_maintenance",
 		fmt.Sprintf("Нода переведена в режим обслуживания: %v", req.Enabled), &id, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
+	return nil
+}
+
+// nodeCertificate asks an ingress node to issue its DoT/DoH certificate over
+// ACME HTTP-01. The node opens :80 only for the challenge and hot-reloads the
+// new cert on its own. Issuance failures (e.g. :80 unreachable) come back as
+// {ok:false, error} with HTTP 200 so the operator sees the reason.
+func (s *Server) nodeCertificate(w http.ResponseWriter, r *http.Request) error {
+	if s.Cfg.Pusher == nil {
+		return fmt.Errorf("push client is not configured on this panel")
+	}
+	var req pusher.CertRequest
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	if strings.TrimSpace(req.Domain) == "" {
+		return badRequest("укажите домен для сертификата")
+	}
+	id := r.PathValue("id")
+	t, err := s.targetFor(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	res, err := s.Cfg.Pusher.IssueCert(r.Context(), t, req)
+	if err != nil {
+		return fmt.Errorf("нода недоступна: %w", err)
+	}
+	s.audit(r.Context(), r, "node.certificate", "node", id,
+		nil, map[string]any{"domain": req.Domain, "ok": res.OK, "staging": req.Staging})
+	if res.OK {
+		s.event(r.Context(), "info", "panel", "cert_issued",
+			fmt.Sprintf("Сертификат выпущен для %s (до %s)", res.Domain, res.NotAfter), &id, nil)
+	} else {
+		s.event(r.Context(), "warn", "panel", "cert_failed",
+			fmt.Sprintf("Не удалось выпустить сертификат для %s: %s", req.Domain, res.Error), &id, nil)
+	}
+	writeJSON(w, http.StatusOK, res)
 	return nil
 }
 

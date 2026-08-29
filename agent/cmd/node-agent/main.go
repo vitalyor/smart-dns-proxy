@@ -21,7 +21,7 @@ import (
 	"smartdns/shared/metrics"
 )
 
-var version = "2.0.0"
+var version = "2.0.2"
 
 func main() {
 	agentcore.Version = version
@@ -31,6 +31,8 @@ func main() {
 		role       = flag.String("role", env("NODE_ROLE", ""), "ingress or egress (must match the bundle)")
 		stateDir   = flag.String("state", env("AGENT_STATE_DIR", "/var/lib/smartdns-agent"), "state directory")
 		listen     = flag.String("listen", env("MGMT_ADDR", ":3333"), "management listen address the panel connects to")
+		tlsDir     = flag.String("tls-dir", env("TLS_DIR", ""), "directory for panel-issued DoT/DoH certificates (ingress only)")
+		acmeHTTP   = flag.String("acme-http", env("ACME_HTTP_ADDR", ":80"), "address the HTTP-01 challenge binds during issuance, then closes")
 		metrAddr   = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9104"), "Prometheus metrics address")
 		showVer    = flag.Bool("version", false, "print version and exit")
 	)
@@ -44,6 +46,7 @@ func main() {
 	a, err := agentcore.New(agentcore.Config{
 		StateDir: *stateDir, ListenAddr: *listen, Role: *role,
 		KeepRevisions: 3, Level: level,
+		TLSDir: *tlsDir, ACMEHTTPAddr: *acmeHTTP,
 	})
 	if err != nil {
 		fatal("agent init: %v", err)
