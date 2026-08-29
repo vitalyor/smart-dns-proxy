@@ -47,7 +47,7 @@ export default function Setup() {
       done: (groupsIn.data?.items.length ?? 0) > 0 && (groupsEg.data?.items.length ?? 0) > 0,
       sub: [(groupsIn.data?.items.length ?? 0) > 0, (groupsEg.data?.items.length ?? 0) > 0].filter(Boolean).length,
       subTotal: 2,
-      to: "/ingress-groups", cta: "Открыть группы",
+      to: "/groups", cta: "Открыть группы",
     },
     {
       title: "Создать сервис",
