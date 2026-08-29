@@ -1,0 +1,21 @@
+# OpenAI — ChatGPT, Codex, Sora, API, Platform
+#
+# Формат «нашего стиля»: голая строка = домен И все поддомены (суффикс).
+# openai.com покрывает api./auth./auth0./platform./cdn.openai.com и т.д.
+# Точный хост, если вдруг нужен — full:host.
+#
+# Источник (проверено): OpenAI Help Center «Network recommendations for
+# ChatGPT errors on web and apps» и «Corporate Network Controls».
+# https://help.openai.com/en/articles/9247338
+
+# --- Ядро: сайт, API, вход ---
+openai.com
+chatgpt.com
+chat.com
+
+# --- Статика и пользовательский контент (CDN) ---
+oaistatic.com
+oaiusercontent.com
+
+# --- Sora ---
+sora.com
