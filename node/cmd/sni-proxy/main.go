@@ -27,6 +27,7 @@ func main() {
 		cfgPath  = flag.String("config", env("SMARTDNS_CONFIG", "/etc/smartdns/active/config.json"), "active node config artifact")
 		identity = flag.String("identity", env("SMARTDNS_IDENTITY", "/var/lib/smartdns-agent/identity"), "node identity directory")
 		listen   = flag.String("listen", env("PROXY_ADDR", ":443"), "TCP listen address for managed HTTPS")
+		dohBack  = flag.String("doh-backend", env("DOH_BACKEND", "dns-frontend:8443"), "local DoH listener to forward the DoH hostname's SNI to (empty disables)")
 		metrAddr = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9102"), "Prometheus metrics address")
 		showVer  = flag.Bool("version", false, "print version and exit")
 	)
@@ -51,6 +52,7 @@ func main() {
 	}
 
 	p := proxy.New(loader.Get(), tlsCfg)
+	p.SetDoHBackend(*dohBack)
 	loader.OnApply(func(c *model.NodeConfig) { p.Apply(c) })
 	go loader.Watch(2 * time.Second)
 	p.StartProbes()

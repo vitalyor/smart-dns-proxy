@@ -33,6 +33,8 @@ done
 
 [[ $EUID -eq 0 ]] || die "запустите через sudo"
 [[ "$ROLE" == "ingress" || "$ROLE" == "egress" ]] || die "--role должен быть ingress или egress"
+# Человекочитаемая подпись роли для вывода оператору (сам ROLE — служебный).
+if [[ "$ROLE" == "ingress" ]]; then ROLE_LABEL="точка входа"; else ROLE_LABEL="точка выхода"; fi
 
 # Бандл можно передать флагом --bundle или вставить по запросу. Второе чище:
 # секрет не остаётся в истории shell и в логах терминала.
@@ -51,7 +53,7 @@ docker compose version >/dev/null 2>&1 || die "нужен Docker Compose v2"
 # --- preflight ---------------------------------------------------------------
 info "Проверка портов и времени"
 need_ports=("$MGMT_PORT")
-if [[ "$ROLE" == "ingress" ]]; then need_ports+=(53 443 853 "$DOH_PORT"); else need_ports+=("$RELAY_PORT"); fi
+if [[ "$ROLE" == "ingress" ]]; then need_ports+=(53 80 443 853 "$DOH_PORT"); else need_ports+=("$RELAY_PORT"); fi
 for p in "${need_ports[@]}"; do
   if command -v ss >/dev/null && ss -lnt "sport = :$p" 2>/dev/null | grep -q LISTEN; then
     die "порт $p занят (частая причина на 53: systemd-resolved — отключите DNSStubListener)"
@@ -66,7 +68,7 @@ ok "предварительные проверки пройдены"
 cat <<PLAN
 
 План установки ноды
-  роль             $ROLE
+  роль             $ROLE_LABEL ($ROLE)
   каталог          $DIR
   порт управления  $MGMT_PORT (сюда подключается панель)
   открыть порты    ${need_ports[*]}
@@ -91,7 +93,7 @@ NODE_BUNDLE=$BUNDLE
 MGMT_BIND=$MGMT_PORT
 RELAY_PORT=$RELAY_PORT
 DOH_PORT=$DOH_PORT
-SMARTDNS_VERSION=2.0.0
+SMARTDNS_VERSION=2.0.2
 LOG_LEVEL=
 LOG_MAX_SIZE=10m
 LOG_MAX_FILE=3
@@ -127,18 +129,19 @@ cat <<DONE
 
 Нода поднята и ждёт панель. Дальше — в панели:
   1. Убедитесь, что адрес управления ноды указан верно (этот сервер:$MGMT_PORT).
-  2. Добавьте ноду в группу ($ROLE) и соберите ревизию — панель протолкнёт конфиг.
+  2. Добавьте ноду в «$ROLE_LABEL» и соберите конфигурацию — панель протолкнёт её на ноду.
 DONE
 if [[ "$ROLE" == "ingress" ]]; then
 cat <<CHECK
   Открыть на этой ноде для устройств:
        ufw allow 853/tcp                       # DoT (Android Private DNS)
+       ufw allow 80/tcp                        # ACME HTTP-01 (выпуск сертификата из панели)
        ufw allow from <VPN-подсеть> to any port 53   # обычный DNS только для своих
        # 443 для SNI-прокси и DoH откройте согласно вашей раскладке
 CHECK
 else
 cat <<CHECK
-  Открыть на этой ноде ТОЛЬКО для ingress-нод:
-       ufw allow from <IP-ingress> to any port $RELAY_PORT proto tcp
+  Открыть на этой ноде ТОЛЬКО для входных нод:
+       ufw allow from <IP-входной-ноды> to any port $RELAY_PORT proto tcp
 CHECK
 fi

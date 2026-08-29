@@ -12,12 +12,12 @@ x-logging: &logging
     max-file: "${LOG_MAX_FILE:-3}"
 
 x-node-image: &node-image
-  image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-2.0.0}
+  image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-2.0.2}
   build:
     context: ../../..
     dockerfile: node/deploy/Dockerfile
     args:
-      VERSION: ${SMARTDNS_VERSION:-2.0.0}
+      VERSION: ${SMARTDNS_VERSION:-2.0.2}
   restart: unless-stopped
   logging: *logging
   read_only: true
@@ -42,11 +42,20 @@ services:
       NODE_BUNDLE: ${NODE_BUNDLE:?NODE_BUNDLE is required — copy it from the panel}
       MGMT_ADDR: ":3333"
       METRICS_ADDR: 0.0.0.0:9104
+      # Where panel-issued DoT/DoH certs are written; dns-frontend mounts the
+      # same dir read-only and hot-reloads them.
+      TLS_DIR: /etc/smartdns/tls
+      # The HTTP-01 challenge binds :80 only for the seconds an issuance runs.
+      ACME_HTTP_ADDR: ":80"
     ports:
       # The panel connects here. Open ONLY to the panel IP in the firewall.
       - "${MGMT_BIND:-3333}:3333"
+      # ACME HTTP-01 validation. Nothing listens here except during issuance.
+      - "${ACME_IP:-0.0.0.0}:80:80/tcp"
     volumes:
       - agentstate:/var/lib/smartdns-agent
+      # Writable so the agent can drop issued certs here for dns-frontend.
+      - ${TLS_DIR:-./tls}:/etc/smartdns/tls
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9104/healthz"]
       interval: 20s
@@ -55,7 +64,7 @@ services:
       start_period: 30s
 
   unbound:
-    image: ghcr.io/vitalyor/smartdns-unbound:${SMARTDNS_VERSION:-2.0.0}
+    image: ghcr.io/vitalyor/smartdns-unbound:${SMARTDNS_VERSION:-2.0.2}
     build:
       context: ../../..
       dockerfile: node/deploy/unbound/Dockerfile
@@ -82,8 +91,8 @@ services:
       DNS_TCP_ADDR: ":53"
       DNS_DOT_ADDR: ":853"
       DNS_DOH_ADDR: ":8443"
-      TLS_CERT_FILE: ${TLS_CERT_FILE:-}
-      TLS_KEY_FILE: ${TLS_KEY_FILE:-}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/etc/smartdns/tls/fullchain.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/etc/smartdns/tls/privkey.pem}
       ALLOW_SELF_SIGNED_TLS: ${ALLOW_SELF_SIGNED_TLS:-0}
       METRICS_ADDR: 0.0.0.0:9101
     cap_add: [NET_BIND_SERVICE]
@@ -104,6 +113,9 @@ services:
     environment:
       <<: *node-env
       PROXY_ADDR: ":443"
+      # A ClientHello whose SNI equals the DoH hostname is forwarded here, so DoH
+      # can share :443 with managed HTTPS on a single public IP.
+      DOH_BACKEND: dns-frontend:8443
       METRICS_ADDR: 0.0.0.0:9102
     cap_add: [NET_BIND_SERVICE]
     volumes:

@@ -5,7 +5,7 @@ import { Spinner, useToast } from "./ui";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Nodes from "./pages/Nodes";
-import Groups from "./pages/Groups";
+import { GroupsPage } from "./pages/Groups";
 import Services from "./pages/Services";
 import RuleSets from "./pages/RuleSets";
 import RuleSetDetail from "./pages/RuleSetDetail";
@@ -16,7 +16,7 @@ import Audit from "./pages/Audit";
 import Settings from "./pages/Settings";
 import Setup from "./pages/Setup";
 import {
-  IconGauge, IconServer, IconArrowIn, IconArrowOut, IconGrid, IconList,
+  IconGauge, IconServer, IconArrowIn, IconGrid, IconList,
   IconLayers, IconPhone, IconPulse, IconShield, IconSliders, IconLogout,
   IconMoon, IconSun, IconPlay,
 } from "./icons";
@@ -33,11 +33,10 @@ const NAV = [
   { to: "/setup", label: "Быстрый старт", Icon: IconPlay },
   { group: "Инфраструктура" },
   { to: "/nodes", label: "Ноды", Icon: IconServer },
-  { to: "/ingress-groups", label: "Точки входа", Icon: IconArrowIn },
-  { to: "/egress-groups", label: "Точки выхода", Icon: IconArrowOut },
+  { to: "/groups", label: "Точки входа и выхода", Icon: IconArrowIn },
   { group: "Конфигурация" },
   { to: "/services", label: "Сервисы", Icon: IconGrid },
-  { to: "/rule-sets", label: "Списки доменов", Icon: IconList },
+  { to: "/rule-sets", label: "Общие списки", Icon: IconList },
   { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
   { to: "/devices", label: "Устройства", Icon: IconPhone },
   { group: "Наблюдение" },
@@ -140,8 +139,9 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/nodes" element={<Nodes />} />
-            <Route path="/ingress-groups" element={<Groups kind="ingress" />} />
-            <Route path="/egress-groups" element={<Groups kind="egress" />} />
+            <Route path="/groups" element={<GroupsPage />} />
+            <Route path="/ingress-groups" element={<Navigate to="/groups" replace />} />
+            <Route path="/egress-groups" element={<Navigate to="/groups" replace />} />
             <Route path="/services" element={<Services />} />
             <Route path="/rule-sets" element={<RuleSets />} />
             <Route path="/rule-sets/:id" element={<RuleSetDetail />} />
