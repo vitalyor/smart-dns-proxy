@@ -220,7 +220,7 @@ function CreateRuleSet({ presets, onClose, onCreated }: {
         </>
       )}
 
-      <Field label="Свои домены" hint="По одному в строке. Поддерживаются domain:, domain-suffix:, full: и *.example.com.">
+      <Field label="Свои домены" hint="По одному в строке. Домен покрывает и все поддомены; только точный хост — full:host. Также domain-suffix: и *.example.com.">
         <textarea className="textarea mono" value={manual} onChange={(e) => setManual(e.target.value)}
           placeholder={"domain:example.com\nfull:api.example.com"} />
       </Field>

@@ -1,0 +1,20 @@
+# Anthropic — Claude (веб claude.ai, API, Console)
+#
+# Голая строка = домен И все поддомены. anthropic.com покрывает
+# api./console.anthropic.com; claude.com покрывает platform./*.mcp.claude.com.
+# Точный хост — full:host.
+#
+# Источник (проверено): Anthropic «Network requirements».
+# https://claude.com/docs/claude-science/network-requirements
+
+# --- Ядро ---
+anthropic.com
+claude.ai
+claude.com
+
+# --- Превью/интерактивный вывод Claude ---
+claudemcpcontent.com
+
+# --- Виджет поддержки (по желанию; чат работает и без него) ---
+# intercom.io
+# downloads.intercomcdn.com

@@ -53,6 +53,23 @@ func TestParseLines(t *testing.T) {
 	}
 }
 
+func TestBareDomainIsSuffix(t *testing.T) {
+	res, _ := ParseLines("openai.com\nfull:api.openai.com", ParseOptions{})
+	if len(res.Entries) != 2 {
+		t.Fatalf("got %d entries: %v", len(res.Entries), res.Entries)
+	}
+	kind := map[string]Kind{}
+	for _, e := range res.Entries {
+		kind[e.Value] = e.Kind
+	}
+	if kind["openai.com"] != KindSuffix {
+		t.Fatalf("bare domain must be suffix, got %v", kind["openai.com"])
+	}
+	if kind["api.openai.com"] != KindExact {
+		t.Fatalf("full: must be exact, got %v", kind["api.openai.com"])
+	}
+}
+
 func TestParseDeterministic(t *testing.T) {
 	a, _ := ParseLines("b.com\na.com\nc.com", ParseOptions{})
 	b, _ := ParseLines("c.com\na.com\nb.com", ParseOptions{})
