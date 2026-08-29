@@ -71,7 +71,7 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("укажите название сервиса")
 	}
 	if !slugRe.MatchString(req.Slug) {
-		return badRequest("slug должен состоять из строчных латинских букв, цифр и дефисов")
+		return badRequest("Идентификатор строится из названия и может содержать только латиницу, цифры и дефисы — задайте название латиницей")
 	}
 	if req.DNSTTL == 0 {
 		req.DNSTTL = 60
@@ -179,10 +179,25 @@ func (s *Server) deleteService(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// translitRU maps Cyrillic to latin so a Russian service name still yields a
+// usable slug instead of an empty one (which failed slugRe at the last step).
+var translitRU = map[rune]string{
+	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e",
+	'ж': "zh", 'з': "z", 'и': "i", 'й': "i", 'к': "k", 'л': "l", 'м': "m",
+	'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u",
+	'ф': "f", 'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch",
+	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
+}
+
 func slugify(s string) string {
 	var b strings.Builder
 	prevDash := false
 	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if t, ok := translitRU[r]; ok {
+			b.WriteString(t)
+			prevDash = false
+			continue
+		}
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			b.WriteRune(r)
@@ -194,5 +209,9 @@ func slugify(s string) string {
 			}
 		}
 	}
-	return strings.Trim(b.String(), "-")
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 40 { // slugRe caps at 40 chars; trim a trailing dash left by the cut
+		out = strings.Trim(out[:40], "-")
+	}
+	return out
 }
