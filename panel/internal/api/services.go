@@ -21,11 +21,15 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 		// True when a probe hostname is set but is not among the service's managed
 		// domains — such a probe hits the SNI proxy as "unmanaged" and always fails.
 		ProbeInSet bool `db:"probe_in_set" json:"probe_in_set"`
+		// Domains are the service's own hand-entered list, surfaced so the service
+		// window can edit them directly — no separate "lists" page.
+		Domains []string `db:"domains" json:"domains"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
 		SELECT sv.*, rs.name AS rule_set_name, ig.name AS ingress_group_name, eg.name AS egress_group_name,
 		       (SELECT count(*)::int FROM rule_entries re WHERE re.version_id = rs.active_version_id) AS rule_count,
 		       rsv.content_hash AS rule_set_hash,
+		       COALESCE(rs.manual_include, '{}') AS domains,
 		       COALESCE(sv.probe->>'hostname','') = '' OR EXISTS(
 		         SELECT 1 FROM rule_entries re
 		         WHERE re.version_id = rs.active_version_id AND re.value = sv.probe->>'hostname') AS probe_in_set
@@ -162,6 +166,62 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	after, _ := store.One[store.Service](r.Context(), s.DB, `SELECT * FROM services WHERE id=$1`, id)
 	s.audit(r.Context(), r, "service.updated", "service", id, before, after)
 	writeJSON(w, http.StatusOK, after)
+	return nil
+}
+
+// setServiceDomains replaces a service's own domain list and rebuilds so the
+// change takes effect. Domains belong to the service; the rule set behind it is
+// a private 1:1 store the operator never sees. A service without a store yet
+// gets one created here.
+func (s *Server) setServiceDomains(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Domains []string `json:"domains"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	id := r.PathValue("id")
+	sv, err := store.One[store.Service](r.Context(), s.DB, `SELECT * FROM services WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	domains := cleanLines(req.Domains)
+
+	ctx := r.Context()
+	var rsID string
+	if sv.RuleSetID != nil && *sv.RuleSetID != "" {
+		rsID = *sv.RuleSetID
+		if _, err := s.DB.Exec(ctx, `UPDATE rule_sets SET manual_include=$2, updated_at=now() WHERE id=$1`,
+			rsID, nonNil(domains)); err != nil {
+			return err
+		}
+	} else {
+		rs, err := store.One[store.RuleSet](ctx, s.DB, `
+			INSERT INTO rule_sets (name, description, update_mode, interval_sec, allow_regex, priority, manual_include, manual_exclude)
+			VALUES ($1,$2,'manual_only',21600,false,100,$3,'{}') RETURNING *`,
+			sv.Name, "Домены сервиса "+sv.Name, nonNil(domains))
+		if err != nil {
+			return err
+		}
+		rsID = rs.ID
+		if _, err := s.DB.Exec(ctx, `UPDATE services SET rule_set_id=$2 WHERE id=$1`, id, rsID); err != nil {
+			return err
+		}
+	}
+	res, err := s.builder().Build(ctx, rsID)
+	if err != nil {
+		return errorf(http.StatusBadGateway, "build_failed", "не удалось собрать домены: %v", err)
+	}
+	// A service's own hand-edited domains apply at once — the operator typed them,
+	// so there is no separate approval step to wait on.
+	if !res.Unchanged && res.Status != "active" && res.VersionID != "" {
+		if err := s.builder().Approve(ctx, rsID, res.VersionID); err != nil {
+			return err
+		}
+		res.Status = "active"
+	}
+	s.audit(ctx, r, "service.domains", "service", id, nil, map[string]any{"count": len(domains)})
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(domains), "build": res})
 	return nil
 }
 

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { api, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
 import { IconPlus, IconTrash } from "../icons";
@@ -11,6 +10,7 @@ type Service = {
   rule_set_name: string | null; ingress_group_name: string | null; egress_group_name: string | null;
   rule_count: number | null; rule_set_hash: string | null;
   probe: Record<string, unknown>; probe_in_set: boolean; version: number;
+  domains: string[];
 };
 type Named = { id: string; name: string };
 type CatalogItem = { slug: string; name: string; preset: string; probe_host: string; domains: number };
@@ -114,7 +114,6 @@ export default function Services() {
       {editing && (
         <ServiceForm
           service={editing}
-          ruleSets={rules.data?.items ?? []}
           ingress={ingress} egress={egress}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); list.reload(); }}
@@ -252,9 +251,18 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
             </div>
           </Field>
           {mode === "manual" && (
-            <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:.">
+            <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:. Можно вписать и/или загрузить файл.">
               <textarea className="input mono" rows={8} value={domains} placeholder={"gemini.google.com\naistudio.google.com"}
                 onChange={(e) => setDomains(e.target.value)} />
+              <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
+                Загрузить файл
+                <input type="file" accept=".txt,.list,text/plain" style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) { const r = new FileReader(); r.onload = () => setDomains((d) => (d.trim() ? d.replace(/\s*$/, "") + "\n" : "") + String(r.result ?? "").trim()); r.readAsText(f); }
+                    e.target.value = "";
+                  }} />
+              </label>
             </Field>
           )}
           {mode === "catalog" && (
@@ -373,12 +381,12 @@ function Steps({ step, labels }: { step: number; labels: string[] }) {
 // Edit existing service (unchanged behaviour): direct field editing.
 // ---------------------------------------------------------------------------
 
-function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
-  service: Service; ruleSets: Named[]; ingress: Named[]; egress: Named[];
+function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
+  service: Service; ingress: Named[]; egress: Named[];
   onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName] = useState(service.name);
-  const [ruleSetId, setRuleSetId] = useState(service.rule_set_id ?? "");
+  const [domains, setDomains] = useState((service.domains ?? []).join("\n"));
   const [ingressId, setIngressId] = useState(service.ingress_group_id ?? "");
   const [egressId, setEgressId] = useState(service.egress_group_id ?? "");
   const [ttl, setTtl] = useState(service.dns_ttl);
@@ -390,11 +398,16 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const addFile = (f: File) => {
+    const r = new FileReader();
+    r.onload = () => setDomains((d) => (d.trim() ? d.replace(/\s*$/, "") + "\n" : "") + String(r.result ?? "").trim());
+    r.readAsText(f);
+  };
+
   const save = async () => {
     setBusy(true); setError("");
     const body: Record<string, unknown> = {
       name, description: "", enabled,
-      rule_set_id: ruleSetId || null,
       ingress_group_id: ingressId || null,
       egress_group_id: egressId || null,
       allowed_ports: ports.split(",").map((p) => Number(p.trim())).filter((n) => n > 0 && n < 65536),
@@ -403,6 +416,8 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
     };
     try {
       await api(`/services/${service.id}`, { method: "PATCH", headers: { "If-Match": String(service.version) }, body });
+      // Domains live on the service; save them (and rebuild) as a second step.
+      await api(`/services/${service.id}/domains`, { method: "PATCH", body: { domains: domains.split("\n") } });
       onSaved();
     } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   };
@@ -423,19 +438,17 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
           <input className="input mono" value={service.slug} disabled />
         </Field>
       </div>
-      <div className="grid g3">
-        <Field label="Список доменов" hint={ruleSetId ? undefined : "Добавить или убрать домены можно после выбора списка."}>
-          <select className="select" value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)}>
-            <option value="">— не выбран —</option>
-            {ruleSets.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          {ruleSetId && (
-            <Link className="linklike tiny" to={`/rule-sets/${ruleSetId}`} onClick={onClose}
-              style={{ display: "inline-block", marginTop: 6 }}>
-              Изменить домены этого списка →
-            </Link>
-          )}
-        </Field>
+      <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:. Правки применятся после сохранения.">
+        <textarea className="input mono" rows={7} value={domains}
+          placeholder={"gemini.google.com\naistudio.google.com"}
+          onChange={(e) => setDomains(e.target.value)} />
+        <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
+          Загрузить файл
+          <input type="file" accept=".txt,.list,text/plain" style={{ display: "none" }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) addFile(f); e.target.value = ""; }} />
+        </label>
+      </Field>
+      <div className="grid g2">
         <Field label="Точка входа">
           <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
             <option value="">— не выбрана —</option>
