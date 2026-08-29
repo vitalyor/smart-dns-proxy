@@ -296,6 +296,7 @@ func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) error {
 		AppliedSequence:   a.state.AppliedSequence,
 		Status:            a.statusLocked(),
 		Role:              a.state.Role,
+		Version:           Version,
 		UptimeS:           int64(time.Since(a.started).Seconds()),
 		LastErr:           a.lastErr,
 	}
