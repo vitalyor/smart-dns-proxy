@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
-import { IconPlus, IconTrash } from "../icons";
+import { IconPlus, IconRefresh, IconTrash } from "../icons";
 
 type Service = {
   id: string; name: string; slug: string; enabled: boolean; priority: number;
@@ -252,7 +252,7 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
           </Field>
           {mode === "manual" && (
             <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:. Можно вписать и/или загрузить файл.">
-              <textarea className="input mono" rows={8} value={domains} placeholder={"gemini.google.com\naistudio.google.com"}
+              <textarea className="textarea mono" rows={8} value={domains} placeholder={"gemini.google.com\naistudio.google.com"}
                 onChange={(e) => setDomains(e.target.value)} />
               <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
                 Загрузить файл
@@ -439,7 +439,7 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
         </Field>
       </div>
       <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:. Правки применятся после сохранения.">
-        <textarea className="input mono" rows={7} value={domains}
+        <textarea className="textarea mono" rows={7} value={domains}
           placeholder={"gemini.google.com\naistudio.google.com"}
           onChange={(e) => setDomains(e.target.value)} />
         <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
@@ -448,6 +448,7 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) addFile(f); e.target.value = ""; }} />
         </label>
       </Field>
+      <SourcesSection serviceId={service.id} />
       <div className="grid g2">
         <Field label="Точка входа">
           <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
@@ -491,6 +492,151 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         Сервис включён
       </label>
+      {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-update sources, managed inside the service window. Each source is a
+// GitHub/HTTPS list that feeds the service's domains; adding, removing, or
+// refreshing rebuilds and activates at once (config still needs a deploy).
+// ---------------------------------------------------------------------------
+
+type Source = { id: string; name: string; type: string; url: string; repo: string; ref: string; path: string };
+type SourceFetch = { source_id: string; status: string; entries: number; error: string };
+
+function SourcesSection({ serviceId }: { serviceId: string }) {
+  const data = useAsync<{ sources: Source[]; fetches: SourceFetch[] }>(() => api(`/services/${serviceId}/sources`), [serviceId]);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<Source | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const sources = data.data?.sources ?? [];
+
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      const r = await api<{ build: { unchanged: boolean; added: number; removed: number } }>(
+        `/services/${serviceId}/refresh`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+      toast({ kind: "ok", title: r.build.unchanged ? "Изменений нет" : "Домены обновлены",
+        body: r.build.unchanged ? undefined : `Добавлено ${r.build.added}, удалено ${r.build.removed}. Соберите конфигурацию, чтобы применить.` });
+      data.reload();
+    } catch (e) { toast({ kind: "bad", title: "Обновление не удалось", body: errText(e) }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Field label="Автообновление доменов"
+      hint="Необязательно. Подтяните список с GitHub или по ссылке — он будет обновляться поверх доменов, вписанных вручную.">
+      {sources.length > 0 && (
+        <div className="table-wrap" style={{ marginBottom: 8 }}>
+          <table className="table">
+            <tbody>
+              {sources.map((s) => {
+                const last = data.data!.fetches.find((f) => f.source_id === s.id);
+                return (
+                  <tr key={s.id}>
+                    <td>
+                      <div className="small" style={{ fontWeight: 550 }}>{s.name || s.repo || s.url || s.path}</div>
+                      <div className="tiny dim mono" style={{ wordBreak: "break-all" }}>
+                        {s.repo ? `${s.repo}@${s.ref || "main"}:${s.path}` : s.url || s.path}
+                      </div>
+                      {last && (
+                        <div className="tiny" style={{ marginTop: 2, color: last.status === "ok" ? "var(--text-3)" : "var(--danger)" }}>
+                          {last.status === "ok" ? `${last.entries} доменов` : last.error}
+                        </div>
+                      )}
+                    </td>
+                    <td className="actions">
+                      <button type="button" className="btn sm ghost danger" aria-label="Удалить источник"
+                        onClick={() => setRemoving(s)}><IconTrash /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" className="btn sm" onClick={() => setAdding(true)}><IconPlus />Добавить источник</button>
+        {sources.length > 0 && (
+          <button type="button" className="btn sm" disabled={busy} onClick={refresh}>
+            {busy ? <span className="spin" /> : <IconRefresh />}Обновить сейчас
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <AddServiceSource serviceId={serviceId} onClose={() => setAdding(false)}
+          onAdded={() => { setAdding(false); data.reload(); }} />
+      )}
+      {removing && (
+        <Confirm title="Удалить источник?" danger confirmLabel="Удалить"
+          body="Домены этого источника исчезнут из сервиса. Соберите конфигурацию, чтобы применить."
+          onClose={() => setRemoving(null)}
+          onConfirm={async () => {
+            await api(`/services/${serviceId}/sources/${removing.id}`, { method: "DELETE" });
+            setRemoving(null); data.reload();
+          }} />
+      )}
+    </Field>
+  );
+}
+
+function AddServiceSource({ serviceId, onClose, onAdded }: { serviceId: string; onClose: () => void; onAdded: () => void }) {
+  const [type, setType] = useState("github_repo");
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [repo, setRepo] = useState("");
+  const [ref, setRef] = useState("main");
+  const [path, setPath] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal title="Источник доменов" onClose={onClose} footer={
+      <>
+        <button className="btn" onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={busy} onClick={async () => {
+          setBusy(true); setError("");
+          try {
+            await api(`/services/${serviceId}/sources`, { method: "POST", body: { name, type, url, repo, ref, path } });
+            onAdded();
+          } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+        }}>{busy ? <span className="spin" /> : null}Добавить</button>
+      </>
+    }>
+      <Field label="Откуда">
+        <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="github_repo">GitHub: репозиторий + путь</option>
+          <option value="github_raw">GitHub: прямая ссылка</option>
+          <option value="https">Произвольный HTTPS-адрес</option>
+        </select>
+      </Field>
+      <Field label="Название" hint="Как источник будет подписан.">
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI (v2fly)" />
+      </Field>
+      {type === "github_repo" ? (
+        <>
+          <div className="grid g2">
+            <Field label="Репозиторий"><input className="input mono" value={repo}
+              onChange={(e) => setRepo(e.target.value)} placeholder="v2fly/domain-list-community" /></Field>
+            <Field label="Ветка или тег" hint="Для стабильности лучше тег или commit — ветка меняется без спроса.">
+              <input className="input mono" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="main" />
+            </Field>
+          </div>
+          <Field label="Путь к файлу"><input className="input mono" value={path}
+            onChange={(e) => setPath(e.target.value)} placeholder="data/openai" /></Field>
+        </>
+      ) : (
+        <Field label="Адрес" hint="Только HTTPS. Обычный текстовый список доменов, по одному в строке.">
+          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://raw.githubusercontent.com/owner/repo/main/list.txt" />
+        </Field>
+      )}
       {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
     </Modal>
   );

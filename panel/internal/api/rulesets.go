@@ -222,12 +222,9 @@ type sourceRequest struct {
 	Enabled        *bool  `json:"enabled"`
 }
 
-func (s *Server) addSource(w http.ResponseWriter, r *http.Request) error {
-	var req sourceRequest
-	if err := decodeJSON(r, &req); err != nil {
-		return err
-	}
-	id := r.PathValue("id")
+// validateSource normalises and checks a source request in place. Shared by the
+// shared-list and service-scoped source endpoints.
+func validateSource(req *sourceRequest) error {
 	if !contains([]string{"github_raw", "github_repo", "https", "manual", "preset", "singbox_json"}, req.Type) {
 		return badRequest("недопустимый тип источника")
 	}
@@ -242,6 +239,18 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) error {
 	}
 	if (req.Type == "github_raw" || req.Type == "https" || req.Type == "singbox_json") && !strings.HasPrefix(req.URL, "https://") {
 		return badRequest("разрешены только HTTPS-источники")
+	}
+	return nil
+}
+
+func (s *Server) addSource(w http.ResponseWriter, r *http.Request) error {
+	var req sourceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	id := r.PathValue("id")
+	if err := validateSource(&req); err != nil {
+		return err
 	}
 	enabled := true
 	if req.Enabled != nil {
