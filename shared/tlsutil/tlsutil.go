@@ -13,8 +13,70 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"sync"
 	"time"
 )
+
+// ReloadingServerConfig returns a tls.Config whose certificate is re-read from
+// disk when the file changes, at handshake time — so a renewed certificate is
+// picked up without restarting the process. It fails only if the certificate
+// cannot be loaded even once.
+func ReloadingServerConfig(certFile, keyFile string) (*tls.Config, error) {
+	r := &certReloader{certFile: certFile, keyFile: keyFile}
+	if _, err := r.reload(); err != nil {
+		return nil, err
+	}
+	cfg := &tls.Config{
+		MinVersion:       tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
+		GetCertificate:   func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return r.get() },
+	}
+	return cfg, nil
+}
+
+type certReloader struct {
+	certFile, keyFile string
+	mu                sync.RWMutex
+	cert              *tls.Certificate
+	mtime             time.Time
+}
+
+// reload loads the keypair if the cert file's mtime changed since last load.
+func (r *certReloader) reload() (*tls.Certificate, error) {
+	fi, err := os.Stat(r.certFile)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.RLock()
+	cur, mt := r.cert, r.mtime
+	r.mu.RUnlock()
+	if cur != nil && fi.ModTime().Equal(mt) {
+		return cur, nil
+	}
+	cert, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
+	if err != nil {
+		return nil, err
+	}
+	r.mu.Lock()
+	r.cert, r.mtime = &cert, fi.ModTime()
+	r.mu.Unlock()
+	slog.Info("TLS certificate loaded", "file", r.certFile)
+	return &cert, nil
+}
+
+// get returns the current certificate, falling back to the last good one if a
+// transient reload error occurs (e.g. the file is mid-rotation).
+func (r *certReloader) get() (*tls.Certificate, error) {
+	if c, err := r.reload(); err == nil {
+		return c, nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.cert != nil {
+		return r.cert, nil
+	}
+	return nil, fmt.Errorf("no usable TLS certificate")
+}
 
 // ServerConfig loads a certificate pair, or generates a short-lived
 // self-signed certificate when no files are configured. Self-signed mode is

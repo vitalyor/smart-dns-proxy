@@ -73,7 +73,7 @@ func (s *Server) requireAuth(minRole string, h handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		u := userOf(r.Context())
 		if u == nil {
-			return errorf(http.StatusUnauthorized, "unauthenticated", "sign in to continue")
+			return errorf(http.StatusUnauthorized, "unauthenticated", "Войдите заново")
 		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -207,7 +207,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) error {
 	u := userOf(r.Context())
 	if u == nil {
-		return errorf(http.StatusUnauthorized, "unauthenticated", "sign in to continue")
+		return errorf(http.StatusUnauthorized, "unauthenticated", "Войдите заново")
 	}
 	row, err := store.One[store.User](r.Context(), s.DB, `SELECT * FROM users WHERE id=$1`, u.ID)
 	if err != nil {

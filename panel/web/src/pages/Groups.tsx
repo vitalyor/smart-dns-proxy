@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import {
-  Card, Confirm, ErrorState, Field, Modal, Notice, Spinner, StatusBadge,
+  Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, StatusBadge,
   errText, useAsync, useToast,
 } from "../ui";
 import { IconPlus, IconTrash } from "../icons";
@@ -26,7 +26,18 @@ const MODES: Record<string, { value: string; label: string; hint: string }[]> = 
   ],
 };
 
-export default function Groups({ kind }: { kind: "ingress" | "egress" }) {
+/** Both group sections on one page, so входа/выхода don't live in two menu items. */
+export function GroupsPage() {
+  return (
+    <>
+      <div><div className="eyebrow">инфраструктура</div><h1>Точки входа и выхода</h1></div>
+      <Groups kind="ingress" embedded />
+      <Groups kind="egress" embedded />
+    </>
+  );
+}
+
+export default function Groups({ kind, embedded }: { kind: "ingress" | "egress"; embedded?: boolean }) {
   const base = `/${kind}-groups`;
   const groups = useAsync<{ items: Row[] }>(() => api(base), [kind]);
   const nodes = useAsync<{ items: Node[] }>(() => api("/nodes"), []);
@@ -42,8 +53,10 @@ export default function Groups({ kind }: { kind: "ingress" | "egress" }) {
 
   return (
     <>
-      <div className="row">
-        <div><div className="eyebrow">инфраструктура</div><h1>{title}</h1></div>
+      <div className="row" style={embedded ? { marginTop: 8 } : undefined}>
+        {embedded
+          ? <h2 style={{ margin: 0 }}>{title}</h2>
+          : <div><div className="eyebrow">инфраструктура</div><h1>{title}</h1></div>}
         <div className="spacer" />
         <button className="btn primary" onClick={() => setCreating(true)}><IconPlus />Создать группу</button>
       </div>
@@ -85,7 +98,12 @@ export default function Groups({ kind }: { kind: "ingress" | "egress" }) {
               </div>
             ) : (
               <div className="table-wrap">
-                <table className="table">
+                <table className="table fixed">
+                  <colgroup>
+                    <col style={{ width: "34%" }} /><col style={{ width: "20%" }} />
+                    <col style={{ width: "16%" }} /><col style={{ width: "14%" }} />
+                    <col style={{ width: "16%" }} />
+                  </colgroup>
                   <thead><tr><th>Нода</th><th>Статус</th><th>Приоритет</th><th>Вес</th><th /></tr></thead>
                   <tbody>
                     {row.members.map((m) => (
@@ -146,7 +164,6 @@ function CreateGroup({ kind, onClose, onCreated }: { kind: "ingress" | "egress";
   const [mode, setMode] = useState(MODES[kind][0].value);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const hint = MODES[kind].find((m) => m.value === mode)?.hint;
 
   return (
     <Modal title="Создать группу" onClose={onClose} footer={
@@ -164,10 +181,8 @@ function CreateGroup({ kind, onClose, onCreated }: { kind: "ingress" | "egress";
       <Field label="Название"><input className="input" autoFocus value={name}
         onChange={(e) => setName(e.target.value)} placeholder={kind === "ingress" ? "Вход РФ" : "Выход ЕС"} /></Field>
       {MODES[kind].length > 1 ? (
-        <Field label="Режим" hint={hint}>
-          <select className="select" value={mode} onChange={(e) => setMode(e.target.value)}>
-            {MODES[kind].map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+        <Field label="Режим">
+          <Segmented value={mode} onChange={setMode} wide options={MODES[kind]} />
         </Field>
       ) : (
         <Notice kind="info" title={MODES[kind][0].label}>{MODES[kind][0].hint}</Notice>
