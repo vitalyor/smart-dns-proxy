@@ -311,12 +311,24 @@ func (s *Server) ListenUDP(addr string) *dns.Server {
 	return &dns.Server{Addr: addr, Net: "udp", Handler: dnsHandler{s, "udp"}, UDPSize: 4096}
 }
 
+// tcpConnPolicy keeps a phone's persistent DoT/TCP connection alive. miekg/dns
+// otherwise defaults to MaxTCPQueries=128 (closes the connection after 128
+// queries) and an 8s idle timeout — a phone reaches 128 lookups in minutes, and
+// on the close iOS fails open to the network's plain DNS, so managed domains
+// resolve directly and stop being routed through the node. -1 removes the query
+// cap; the long idle keeps a briefly-quiet connection open.
+func tcpConnPolicy(s *dns.Server) *dns.Server {
+	s.MaxTCPQueries = -1
+	s.IdleTimeout = func() time.Duration { return 120 * time.Second }
+	return s
+}
+
 func (s *Server) ListenTCP(addr string) *dns.Server {
-	return &dns.Server{Addr: addr, Net: "tcp", Handler: dnsHandler{s, "tcp"}}
+	return tcpConnPolicy(&dns.Server{Addr: addr, Net: "tcp", Handler: dnsHandler{s, "tcp"}})
 }
 
 func (s *Server) ListenTLS(addr string, tc *tls.Config) *dns.Server {
-	return &dns.Server{Addr: addr, Net: "tcp-tls", TLSConfig: tc, Handler: dnsHandler{s, "dot"}}
+	return tcpConnPolicy(&dns.Server{Addr: addr, Net: "tcp-tls", TLSConfig: tc, Handler: dnsHandler{s, "dot"}})
 }
 
 // DoHHandler implements RFC 8484 GET and POST.

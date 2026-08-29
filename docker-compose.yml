@@ -35,8 +35,8 @@ services:
       context: .
       dockerfile: deploy/panel/Dockerfile
       args:
-        VERSION: ${SMARTDNS_VERSION:-2.0.2}
-    image: smartdns/panel-api:${SMARTDNS_VERSION:-2.0.2}
+        VERSION: ${SMARTDNS_VERSION:-2.0.3}
+    image: smartdns/panel-api:${SMARTDNS_VERSION:-2.0.3}
     restart: unless-stopped
     logging: *logging
     depends_on:
