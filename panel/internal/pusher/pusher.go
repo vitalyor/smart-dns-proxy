@@ -94,6 +94,10 @@ func (c *Client) tlsFor(t Target) *tls.Config {
 }
 
 func (c *Client) do(ctx context.Context, t Target, method, path string, body []byte) ([]byte, int, error) {
+	return c.doTimeout(ctx, t, method, path, body, 15*time.Second)
+}
+
+func (c *Client) doTimeout(ctx context.Context, t Target, method, path string, body []byte, timeout time.Duration) ([]byte, int, error) {
 	addr := t.MgmtAddress
 	if _, _, err := net.SplitHostPort(addr); err != nil {
 		addr = net.JoinHostPort(addr, "3333")
@@ -116,7 +120,7 @@ func (c *Client) do(ctx context.Context, t Target, method, path string, body []b
 		MaxIdleConnsPerHost: 1,
 	}
 	defer tr.CloseIdleConnections()
-	hc := &http.Client{Timeout: 15 * time.Second, Transport: tr}
+	hc := &http.Client{Timeout: timeout, Transport: tr}
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, 0, err
@@ -143,6 +147,41 @@ func (c *Client) PushConfig(ctx context.Context, t Target, artifact []byte) (*Pu
 		return nil, fmt.Errorf("node rejected config (HTTP %d): %s", code, string(raw))
 	}
 	var out PushResult
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CertRequest asks a node to issue a DoT/DoH certificate via ACME HTTP-01.
+type CertRequest struct {
+	Domain  string `json:"domain"`
+	Email   string `json:"email,omitempty"`
+	Force   bool   `json:"force,omitempty"`
+	Staging bool   `json:"staging,omitempty"`
+}
+
+// CertResult is the node's answer. OK=false with Error set is a normal
+// issuance failure (e.g. :80 unreachable), not a transport error.
+type CertResult struct {
+	OK       bool   `json:"ok"`
+	Domain   string `json:"domain,omitempty"`
+	NotAfter string `json:"not_after,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+// IssueCert asks a node to run an ACME order. HTTP-01 validation plus finalize
+// can take a couple of minutes, so this uses a long timeout.
+func (c *Client) IssueCert(ctx context.Context, t Target, req CertRequest) (*CertResult, error) {
+	body, _ := json.Marshal(req)
+	raw, code, err := c.doTimeout(ctx, t, http.MethodPost, "/v1/cert/issue", body, 4*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("node rejected cert request (HTTP %d): %s", code, string(raw))
+	}
+	var out CertResult
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}

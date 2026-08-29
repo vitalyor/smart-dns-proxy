@@ -43,10 +43,15 @@ export default function RuleSets() {
   return (
     <>
       <div className="row">
-        <div><div className="eyebrow">конфигурация</div><h1>Списки доменов</h1></div>
+        <div><div className="eyebrow">конфигурация</div><h1>Общие списки</h1></div>
         <div className="spacer" />
         <button className="btn primary" onClick={() => setCreating(true)}><IconPlus />Новый список</button>
       </div>
+
+      <Notice kind="info" title="Нужны, только если список переиспользуется несколькими сервисами">
+        Обычно домены задаются прямо в сервисе через мастер. Общий список имеет смысл, когда один и тот же
+        набор доменов нужен сразу нескольким сервисам, или когда список большой и обновляется из источника.
+      </Notice>
 
       <Notice kind="info" title="Ошибка загрузки никогда не стирает активный список">
         Если источник недоступен, вернул пустой ответ или HTML вместо списка, кандидат отклоняется и

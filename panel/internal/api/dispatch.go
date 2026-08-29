@@ -169,8 +169,8 @@ func (s *Server) pollOnce(ctx context.Context) {
 			status = CASE WHEN status IN ('maintenance','disabled') THEN status ELSE $2 END,
 			applied_revision_id = COALESCE(NULLIF($3,'')::uuid, applied_revision_id),
 			applied_sequence = $4, health = $5, last_seen_at = now(),
-			last_error = $6, updated_at = now()
-			WHERE id=$1`, n.ID, status, h.AppliedRevisionID, h.AppliedSequence, hj, h.LastErr)
+			last_error = $6, agent_version = COALESCE(NULLIF($7,''), agent_version), updated_at = now()
+			WHERE id=$1`, n.ID, status, h.AppliedRevisionID, h.AppliedSequence, hj, h.LastErr, h.Version)
 		_, _ = s.DB.Exec(ctx, `INSERT INTO health_samples (node_id, kind, success, latency_ms)
 			VALUES ($1,'poll',$2,0)`, n.ID, status == "healthy")
 

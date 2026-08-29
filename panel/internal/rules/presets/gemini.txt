@@ -1,0 +1,6 @@
+# Built-in preset: Google Gemini / AI Studio — app and generative API only.
+# Narrow on purpose: google.com as a suffix would break unrelated services.
+domain:gemini.google.com
+domain:aistudio.google.com
+domain:generativelanguage.googleapis.com
+domain:alkalimakersuite-pa.clients6.google.com
