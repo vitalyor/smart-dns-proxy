@@ -60,6 +60,10 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /services/wizard", s.wrap("services.wizard", v("operator", s.serviceWizard)))
 	api.HandleFunc("PATCH /services/{id}", s.wrap("services.patch", v("operator", s.patchService)))
 	api.HandleFunc("PATCH /services/{id}/domains", s.wrap("services.domains", v("operator", s.setServiceDomains)))
+	api.HandleFunc("GET /services/{id}/sources", s.wrap("services.sources.list", v("viewer", s.listServiceSources)))
+	api.HandleFunc("POST /services/{id}/sources", s.wrap("services.source.add", v("operator", s.addServiceSource)))
+	api.HandleFunc("DELETE /services/{id}/sources/{source_id}", s.wrap("services.source.delete", v("operator", s.deleteServiceSource)))
+	api.HandleFunc("POST /services/{id}/refresh", s.wrap("services.refresh", v("operator", s.refreshService)))
 	api.HandleFunc("DELETE /services/{id}", s.wrap("services.delete", v("operator", s.deleteService)))
 
 	// --- rule sets ---

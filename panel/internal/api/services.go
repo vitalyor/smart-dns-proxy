@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
 
+	"smartdns/panel/internal/rules"
 	"smartdns/panel/internal/store"
 )
 
@@ -169,10 +171,46 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// setServiceDomains replaces a service's own domain list and rebuilds so the
-// change takes effect. Domains belong to the service; the rule set behind it is
-// a private 1:1 store the operator never sees. A service without a store yet
-// gets one created here.
+// ensureServiceRuleSet returns the id of the service's private domain store,
+// creating one on first use. The rule set is a 1:1 backing store the operator
+// never sees directly — they edit "the service's domains" and "the service's
+// auto-update sources", and this is where both live.
+func (s *Server) ensureServiceRuleSet(ctx context.Context, sv *store.Service) (string, error) {
+	if sv.RuleSetID != nil && *sv.RuleSetID != "" {
+		return *sv.RuleSetID, nil
+	}
+	rs, err := store.One[store.RuleSet](ctx, s.DB, `
+		INSERT INTO rule_sets (name, description, update_mode, interval_sec, allow_regex, priority, manual_include, manual_exclude)
+		VALUES ($1,$2,'manual_only',21600,false,100,'{}','{}') RETURNING *`,
+		sv.Name, "Домены сервиса "+sv.Name)
+	if err != nil {
+		return "", err
+	}
+	if _, err := s.DB.Exec(ctx, `UPDATE services SET rule_set_id=$2 WHERE id=$1`, sv.ID, rs.ID); err != nil {
+		return "", err
+	}
+	sv.RuleSetID = &rs.ID
+	return rs.ID, nil
+}
+
+// rebuildActivate rebuilds a service's domain set and activates the result at
+// once. Unlike shared lists, a service has no approval step — the operator's own
+// edits (typed domains, added sources) take effect immediately after a rebuild.
+func (s *Server) rebuildActivate(ctx context.Context, rsID string) (*rules.BuildResult, error) {
+	res, err := s.builder().Build(ctx, rsID)
+	if err != nil {
+		return nil, errorf(http.StatusBadGateway, "build_failed", "не удалось собрать домены: %v", err)
+	}
+	if !res.Unchanged && res.Status != "active" && res.VersionID != "" {
+		if err := s.builder().Approve(ctx, rsID, res.VersionID); err != nil {
+			return nil, err
+		}
+		res.Status = "active"
+	}
+	return res, nil
+}
+
+// setServiceDomains replaces a service's own hand-typed domain list and rebuilds.
 func (s *Server) setServiceDomains(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Domains []string `json:"domains"`
@@ -180,48 +218,142 @@ func (s *Server) setServiceDomains(w http.ResponseWriter, r *http.Request) error
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	id := r.PathValue("id")
-	sv, err := store.One[store.Service](r.Context(), s.DB, `SELECT * FROM services WHERE id=$1`, id)
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
 	if err != nil {
 		return err
 	}
 	domains := cleanLines(req.Domains)
-
-	ctx := r.Context()
-	var rsID string
-	if sv.RuleSetID != nil && *sv.RuleSetID != "" {
-		rsID = *sv.RuleSetID
-		if _, err := s.DB.Exec(ctx, `UPDATE rule_sets SET manual_include=$2, updated_at=now() WHERE id=$1`,
-			rsID, nonNil(domains)); err != nil {
-			return err
-		}
-	} else {
-		rs, err := store.One[store.RuleSet](ctx, s.DB, `
-			INSERT INTO rule_sets (name, description, update_mode, interval_sec, allow_regex, priority, manual_include, manual_exclude)
-			VALUES ($1,$2,'manual_only',21600,false,100,$3,'{}') RETURNING *`,
-			sv.Name, "Домены сервиса "+sv.Name, nonNil(domains))
-		if err != nil {
-			return err
-		}
-		rsID = rs.ID
-		if _, err := s.DB.Exec(ctx, `UPDATE services SET rule_set_id=$2 WHERE id=$1`, id, rsID); err != nil {
-			return err
-		}
-	}
-	res, err := s.builder().Build(ctx, rsID)
+	rsID, err := s.ensureServiceRuleSet(ctx, &sv)
 	if err != nil {
-		return errorf(http.StatusBadGateway, "build_failed", "не удалось собрать домены: %v", err)
+		return err
 	}
-	// A service's own hand-edited domains apply at once — the operator typed them,
-	// so there is no separate approval step to wait on.
-	if !res.Unchanged && res.Status != "active" && res.VersionID != "" {
-		if err := s.builder().Approve(ctx, rsID, res.VersionID); err != nil {
-			return err
-		}
-		res.Status = "active"
+	if _, err := s.DB.Exec(ctx, `UPDATE rule_sets SET manual_include=$2, updated_at=now() WHERE id=$1`,
+		rsID, nonNil(domains)); err != nil {
+		return err
 	}
-	s.audit(ctx, r, "service.domains", "service", id, nil, map[string]any{"count": len(domains)})
+	res, err := s.rebuildActivate(ctx, rsID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.domains", "service", sv.ID, nil, map[string]any{"count": len(domains)})
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(domains), "build": res})
+	return nil
+}
+
+// listServiceSources returns the auto-update sources behind a service and their
+// last fetch outcome, so the service window can show and manage them. A service
+// with no rule set yet simply has no sources.
+func (s *Server) listServiceSources(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if sv.RuleSetID == nil || *sv.RuleSetID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"sources": []any{}, "fetches": []any{}})
+		return nil
+	}
+	rsID := *sv.RuleSetID
+	sources, err := store.Many[store.RuleSource](ctx, s.DB,
+		`SELECT * FROM rule_sources WHERE rule_set_id=$1 ORDER BY created_at`, rsID)
+	if err != nil {
+		return err
+	}
+	type fetchRow struct {
+		SourceID  string `db:"source_id" json:"source_id"`
+		Status    string `db:"status" json:"status"`
+		Entries   int    `db:"entries" json:"entries"`
+		Error     string `db:"error" json:"error"`
+		StartedAt string `db:"started_at" json:"started_at"`
+	}
+	fetches, _ := store.Many[fetchRow](ctx, s.DB, `
+		SELECT source_id::text, status, entries, error, started_at::text
+		FROM rule_fetches WHERE source_id IN (SELECT id FROM rule_sources WHERE rule_set_id=$1)
+		ORDER BY started_at DESC LIMIT 30`, rsID)
+	writeJSON(w, http.StatusOK, map[string]any{"sources": sources, "fetches": fetches})
+	return nil
+}
+
+// addServiceSource attaches an auto-update source to a service and rebuilds so
+// its domains are pulled in immediately.
+func (s *Server) addServiceSource(w http.ResponseWriter, r *http.Request) error {
+	var req sourceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	if err := validateSource(&req); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	rsID, err := s.ensureServiceRuleSet(ctx, &sv)
+	if err != nil {
+		return err
+	}
+	src, err := store.One[store.RuleSource](ctx, s.DB, `
+		INSERT INTO rule_sources (rule_set_id, name, type, url, repo, ref, path, mode, expected_sha256, enabled)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true) RETURNING *`,
+		rsID, req.Name, req.Type, req.URL, req.Repo, req.Ref, req.Path, req.Mode, req.ExpectedSHA256)
+	if err != nil {
+		return err
+	}
+	res, err := s.rebuildActivate(ctx, rsID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.source.added", "service", sv.ID, nil, src)
+	writeJSON(w, http.StatusCreated, map[string]any{"source": src, "build": res})
+	return nil
+}
+
+func (s *Server) deleteServiceSource(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if sv.RuleSetID == nil || *sv.RuleSetID == "" {
+		return notFound("source")
+	}
+	n, err := s.DB.ExecN(ctx, `DELETE FROM rule_sources WHERE id=$1 AND rule_set_id=$2`,
+		r.PathValue("source_id"), *sv.RuleSetID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return notFound("source")
+	}
+	res, err := s.rebuildActivate(ctx, *sv.RuleSetID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.source.deleted", "service", sv.ID, nil, map[string]any{"source_id": r.PathValue("source_id")})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "build": res})
+	return nil
+}
+
+// refreshService re-pulls every source and activates the result — the "обновить
+// сейчас" button in the service window.
+func (s *Server) refreshService(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if sv.RuleSetID == nil || *sv.RuleSetID == "" {
+		return badRequest("у сервиса пока нет источников для обновления")
+	}
+	res, err := s.rebuildActivate(ctx, *sv.RuleSetID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.refreshed", "service", sv.ID, nil,
+		map[string]any{"added": res.Added, "removed": res.Removed, "status": res.Status})
+	writeJSON(w, http.StatusOK, map[string]any{"build": res})
 	return nil
 }
 
