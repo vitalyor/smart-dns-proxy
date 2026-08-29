@@ -186,8 +186,12 @@ func parseOne(line string, allowRegex bool) (Entry, error) {
 	case strings.ContainsAny(line, "*?/"):
 		return Entry{}, errors.New("unsupported wildcard form")
 	default:
+		// A bare domain means "this domain and everything under it" — the way a
+		// person reading "unblock openai.com" expects it to work, and what the
+		// community lists (v2fly, itdog) assume. Exact-host matching is the
+		// explicit `full:` form.
 		v, err := NormalizeHost(line)
-		return Entry{KindExact, v}, err
+		return Entry{KindSuffix, v}, err
 	}
 }
 

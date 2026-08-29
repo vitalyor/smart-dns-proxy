@@ -251,7 +251,7 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
             </div>
           </Field>
           {mode === "manual" && (
-            <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:. Можно вписать и/или загрузить файл.">
+            <Field label="Домены" hint="По одному в строке. Домен покрывает и все поддомены (openai.com → и api.openai.com). Только точный хост — full:host. Можно загрузить файл.">
               <textarea className="textarea mono" rows={8} value={domains} placeholder={"gemini.google.com\naistudio.google.com"}
                 onChange={(e) => setDomains(e.target.value)} />
               <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
@@ -449,7 +449,7 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
 
       {tab === "domains" && (
         <>
-          <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:. Правки применятся после сохранения.">
+          <Field label="Домены" hint="По одному в строке. Домен покрывает и все поддомены (openai.com → и api.openai.com). Только точный хост — full:host. Правки применятся после сохранения.">
             <textarea className="textarea mono" rows={8} value={domains}
               placeholder={"gemini.google.com\naistudio.google.com"}
               onChange={(e) => setDomains(e.target.value)} />
