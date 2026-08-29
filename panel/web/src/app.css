@@ -355,6 +355,12 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 /* File pickers can't honour a fixed height without clipping the button. */
 .input[type="file"] { height: auto; padding: 7px 10px; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--direct); outline: none; }
+/* Placeholders must read as a hint, not as already-typed text: dim, italic,
+   and never the mono data face. */
+.input::placeholder, .textarea::placeholder {
+  color: var(--text-3); opacity: .6;
+  font-family: var(--sans); font-style: italic; font-size: 13px;
+}
 /* Mono changes the face, never the height — the box stays 38px. */
 .input.mono, .textarea.mono { font-family: var(--mono); font-size: 13px; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; }
