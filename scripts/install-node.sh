@@ -87,6 +87,13 @@ if [[ ! -f "$DIR/docker-compose.yml" ]]; then
   ok "compose роли $ROLE установлен в $DIR (образы тянутся из реестра — сборка на сервере не нужна)"
 fi
 
+# Ingress хранит здесь сертификаты, выпущенные из панели. Контейнер работает
+# под uid 10001, поэтому смонтированный каталог должен быть ему доступен на
+# запись (dns-frontend делит тот же uid и читает cert оттуда же).
+if [[ "$ROLE" == "ingress" ]]; then
+  install -d -o 10001 -g 10001 -m 0755 "$DIR/tls"
+fi
+
 umask 077
 cat > "$DIR/.env" <<ENV
 NODE_BUNDLE=$BUNDLE
