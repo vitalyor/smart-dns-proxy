@@ -22,6 +22,7 @@ export const IconPulse = svg(<><path d="M3 12h4l2.5-7 4 14L16 12h5" /></>);
 export const IconShield = svg(<><path d="M12 3 4.5 6v6c0 4.5 3.2 7.9 7.5 9 4.3-1.1 7.5-4.5 7.5-9V6L12 3Z" /><path d="m9.2 12 2 2 3.6-3.8" /></>);
 export const IconSliders = svg(<><path d="M4 8h10M18 8h2M4 16h4M12 16h8" /><circle cx="16" cy="8" r="2" /><circle cx="10" cy="16" r="2" /></>);
 export const IconPlus = svg(<><path d="M12 5v14M5 12h14" /></>);
+export const IconBack = svg(<><path d="m15 6-6 6 6 6" /></>);
 export const IconTrash = svg(<><path d="M4 7h16" /><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7" /><path d="M6.5 7 7 19a1.5 1.5 0 0 0 1.5 1.4h7A1.5 1.5 0 0 0 17 19l.5-12" /></>);
 export const IconRefresh = svg(<><path d="M20 11a8 8 0 0 0-13.7-5.2L4 8" /><path d="M4 4v4h4" /><path d="M4 13a8 8 0 0 0 13.7 5.2L20 16" /><path d="M20 20v-4h-4" /></>);
 export const IconDownload = svg(<><path d="M12 4v11" /><path d="m8 11 4 4 4-4" /><path d="M4 19h16" /></>);

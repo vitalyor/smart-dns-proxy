@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, fmtTime, shortHash, timeTitle } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Spinner, errText, useAsync, useToast } from "../ui";
-import { IconCheck, IconClose, IconPlus, IconRefresh, IconTrash } from "../icons";
+import { IconBack, IconCheck, IconClose, IconPlus, IconRefresh, IconTrash } from "../icons";
 
 type Source = {
   id: string; name: string; type: string; url: string; repo: string; ref: string;
@@ -48,6 +48,8 @@ export default function RuleSetDetail() {
   return (
     <>
       <div className="row">
+        <Link className="btn ghost icon" to="/rule-sets" aria-label="Назад к спискам доменов"
+          style={{ marginRight: 4 }}><IconBack /></Link>
         <div>
           <div className="eyebrow"><Link to="/rule-sets">списки доменов</Link> / {rs.name}</div>
           <h1>{rs.name}</h1>

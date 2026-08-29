@@ -154,6 +154,9 @@ h3 { font-size: 14px; }
   padding: 14px 16px; border-bottom: 1px solid var(--line-soft);
 }
 .card-head .spacer { flex: 1; }
+/* Header actions read as one group with a tight, even gap — the 12px head gap
+   separates them from the title, not from each other. */
+.card-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
 .card-body { padding: 16px; }
 .card-body.tight { padding: 0; }
 .grid { display: grid; gap: 16px; }
@@ -326,7 +329,10 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .table td { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr:hover td { background: var(--surface-2); }
-.table td.actions { text-align: right; white-space: nowrap; }
+/* Action clusters line up as one flex row with an even gap, so buttons never
+   slip out of alignment or crowd the trailing icon button. */
+.table td.actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .table-wrap { overflow-x: auto; }
 
 /* ---------- forms ---------- */
@@ -412,12 +418,21 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .difflist div { padding: 2px 8px; border-radius: 3px; }
 .difflist .add { color: var(--ok); }
 .difflist .rem { color: var(--danger); }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line-soft); }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
 .tab {
-  padding: 8px 12px; font-size: 13.5px; color: var(--text-2);
+  display: inline-flex; align-items: center; gap: 7px; min-height: 40px;
+  padding: 8px 14px; font-size: 13.5px; font-weight: 500; color: var(--text-2);
   border-bottom: 2px solid transparent; cursor: pointer; background: none; border-top: 0; border-left: 0; border-right: 0;
+  transition: color .12s ease, border-color .12s ease;
 }
+.tab:hover:not(.active) { color: var(--text); }
 .tab.active { color: var(--text); border-bottom-color: var(--managed); }
+/* Count/marker chip riding along a tab label (e.g. "Домены 12"). */
+.tab .tab-count {
+  font: 500 11px/1 var(--mono); color: var(--text-3);
+  background: var(--surface-2); border-radius: 999px; padding: 3px 7px;
+}
+.tab.active .tab-count { color: var(--text-2); }
 .bar { height: 5px; border-radius: 3px; background: var(--line-soft); overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--direct); }
 
