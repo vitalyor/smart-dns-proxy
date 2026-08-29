@@ -21,7 +21,7 @@ import (
 	"smartdns/shared/metrics"
 )
 
-var version = "2.0.0"
+var version = "2.0.1"
 
 func main() {
 	agentcore.Version = version
