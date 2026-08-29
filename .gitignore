@@ -14,4 +14,4 @@ panel/web/dist/
 *.tar.enc
 # Локальные артефакты сборки и рабочие документы (содержат реальные IP).
 *.tsbuildinfo
-/LAUNCH-PLAN.html
+/LAUNCH-PLAN.html.blackbox/
