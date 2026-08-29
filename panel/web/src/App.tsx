@@ -16,7 +16,7 @@ import Audit from "./pages/Audit";
 import Settings from "./pages/Settings";
 import Setup from "./pages/Setup";
 import {
-  IconGauge, IconServer, IconArrowIn, IconGrid, IconList,
+  IconGauge, IconServer, IconArrowIn, IconGrid,
   IconLayers, IconPhone, IconPulse, IconShield, IconSliders, IconLogout,
   IconMoon, IconSun, IconPlay,
 } from "./icons";
@@ -36,7 +36,8 @@ const NAV = [
   { to: "/groups", label: "Точки входа и выхода", Icon: IconArrowIn },
   { group: "Конфигурация" },
   { to: "/services", label: "Сервисы", Icon: IconGrid },
-  { to: "/rule-sets", label: "Общие списки", Icon: IconList },
+  // Общие списки живут внутри сервиса; страница /rule-sets остаётся доступной по
+  // прямой ссылке для редкого случая «один список на несколько сервисов».
   { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
   { to: "/devices", label: "Устройства", Icon: IconPhone },
   { group: "Наблюдение" },
