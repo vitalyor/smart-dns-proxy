@@ -3,6 +3,7 @@ package dnsfe
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -23,4 +24,19 @@ func TestRotateConcurrent(t *testing.T) {
 		go func() { defer wg.Done(); rotate(mk()) }()
 	}
 	wg.Wait()
+}
+
+// A phone keeps one DoT connection open all day; the miekg/dns defaults would
+// close it after 128 queries (then iOS fails open to plain DNS and the unblock
+// breaks). Guard that DoT/TCP lift the cap and keep a long idle window.
+func TestTCPConnPolicy(t *testing.T) {
+	s := &Server{}
+	for name, srv := range map[string]*dns.Server{"tcp": s.ListenTCP(":0"), "dot": s.ListenTLS(":0", nil)} {
+		if srv.MaxTCPQueries != -1 {
+			t.Errorf("%s: MaxTCPQueries=%d, want -1 (unlimited)", name, srv.MaxTCPQueries)
+		}
+		if srv.IdleTimeout == nil || srv.IdleTimeout() < 60*time.Second {
+			t.Errorf("%s: idle timeout too short for a phone", name)
+		}
+	}
 }
