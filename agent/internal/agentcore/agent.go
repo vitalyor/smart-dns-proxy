@@ -29,7 +29,7 @@ import (
 )
 
 // Version is the agent build version, reported to the panel in health.
-var Version = "2.0.2"
+var Version = "2.0.3"
 
 // Config controls the agent runtime.
 type Config struct {
