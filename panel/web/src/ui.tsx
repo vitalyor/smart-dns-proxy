@@ -96,7 +96,7 @@ export function Card({ title, eyebrow, actions, children, tight }: {
             {title && <h2>{title}</h2>}
           </div>
           <div className="spacer" />
-          {actions}
+          {actions && <div className="card-actions">{actions}</div>}
         </header>
       )}
       <div className={`card-body${tight ? " tight" : ""}`}>{children}</div>
