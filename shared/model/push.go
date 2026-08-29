@@ -80,6 +80,7 @@ type Health struct {
 
 	Status  string `json:"status"` // healthy|degraded
 	Role    string `json:"role"`
+	Version string `json:"version"` // agent build version, surfaced in the panel
 	UptimeS int64  `json:"uptime_s"`
 	LastErr string `json:"last_error,omitempty"`
 
