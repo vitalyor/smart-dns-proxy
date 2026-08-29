@@ -37,11 +37,13 @@ func installCommand(repo, role string) string {
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	type row struct {
 		store.Node
-		DesiredSeq *int64   `db:"desired_sequence" json:"desired_sequence"`
-		Groups     []string `db:"groups" json:"groups"`
+		DesiredSeq   *int64   `db:"desired_sequence" json:"desired_sequence"`
+		Groups       []string `db:"groups" json:"groups"`
+		CertDaysLeft *int     `db:"cert_days_left" json:"cert_days_left"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
 		SELECT n.*, dr.sequence AS desired_sequence,
+		       NULLIF(n.health->>'cert_days_left','')::int AS cert_days_left,
 		       COALESCE(
 		         (SELECT array_agg(g.name ORDER BY g.name) FROM ingress_group_members m
 		            JOIN ingress_groups g ON g.id = m.group_id WHERE m.node_id = n.id)

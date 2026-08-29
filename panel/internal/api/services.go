@@ -18,11 +18,17 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 		EgressName  *string `db:"egress_group_name" json:"egress_group_name"`
 		RuleCount   *int    `db:"rule_count" json:"rule_count"`
 		RuleSetHash *string `db:"rule_set_hash" json:"rule_set_hash"`
+		// True when a probe hostname is set but is not among the service's managed
+		// domains — such a probe hits the SNI proxy as "unmanaged" and always fails.
+		ProbeInSet bool `db:"probe_in_set" json:"probe_in_set"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
 		SELECT sv.*, rs.name AS rule_set_name, ig.name AS ingress_group_name, eg.name AS egress_group_name,
 		       (SELECT count(*)::int FROM rule_entries re WHERE re.version_id = rs.active_version_id) AS rule_count,
-		       rsv.content_hash AS rule_set_hash
+		       rsv.content_hash AS rule_set_hash,
+		       COALESCE(sv.probe->>'hostname','') = '' OR EXISTS(
+		         SELECT 1 FROM rule_entries re
+		         WHERE re.version_id = rs.active_version_id AND re.value = sv.probe->>'hostname') AS probe_in_set
 		FROM services sv
 		LEFT JOIN rule_sets rs ON rs.id = sv.rule_set_id
 		LEFT JOIN rule_set_versions rsv ON rsv.id = rs.active_version_id
