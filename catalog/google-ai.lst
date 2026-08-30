@@ -1,12 +1,13 @@
 # Google AI — Gemini, AI Studio, NotebookLM, Jules, Labs
 #
-# Голая строка = домен И все поддомены. Конкретные *-pa.googleapis.com даны
-# точечно (как суффикс матчат только свой поддомен — зону googleapis.com
-# целиком НЕ уводим). Точный хост — full:host.
+# ВАЖНО: сюда попадают ТОЛЬКО домены, которые реально нужно выводить через
+# зарубежный egress (заблокированные / привязанные к сессии). Общий Google-CDN,
+# шрифты и аватарки (gstatic, googleusercontent, fonts.googleapis, apis.google.com,
+# www.googleapis.com) НЕ включаем — они не заблокированы, работают напрямую, а
+# прогон их через egress ломает загрузку страниц (QUIC-фолбэк, лишняя задержка).
 #
-# Источник (проверено): официальный список хостов «Gemini app firewall
-# settings» (Google Workspace Admin) + dev-домены AI Studio / Gemini API.
-# https://knowledge.workspace.google.com/admin/gemini/gemini-app-firewall-settings
+# Голая строка = домен и все поддомены. Точный хост — full:host.
+# Источник: официальный «Gemini app firewall settings» (отфильтровано под reroute).
 
 # --- Gemini (веб) ---
 gemini.google.com
@@ -27,48 +28,12 @@ labs.google
 deepmind.google
 deepmind.com
 
-# --- Бэкенды (конкретные хосты *.googleapis.com / *.clients6.google.com) ---
+# --- Бэкенды Gemini/AI Studio (конкретные хосты, только свои) ---
 jnn-pa.googleapis.com
-waa-pa.clients6.google.com
-optimizationguide-pa.googleapis.com
-content-autofill.googleapis.com
-streetviewpixels-pa.googleapis.com
-ogads-pa.clients6.google.com
 proactivebackend-pa.googleapis.com
 geller-pa.googleapis.com
 aisandbox-pa.googleapis.com
 robinfrontend-pa.googleapis.com
 aida.googleapis.com
 alkalimakersuite-pa.clients6.google.com
-
-# --- Вход/скрипты/карты (конкретные хосты Google) ---
-apis.google.com
-www.googleapis.com
-ogs.google.com
-play.google.com
-csp.withgoogle.com
-
-# --- Статика, шрифты, аватарки, картинки ---
-# gstatic по конкретным хостам; googleusercontent суффиксом (аватарки lhN.*)
-ssl.gstatic.com
-www.gstatic.com
-fonts.gstatic.com
-fonts.googleapis.com
-maps.gstatic.com
-encrypted-tbn0.gstatic.com
-encrypted-tbn1.gstatic.com
-encrypted-tbn2.gstatic.com
-encrypted-tbn3.gstatic.com
-googleusercontent.com
-
-# --- Необязательное (аналитика/реклама/видео из офиц. списка; для разблокировки
-#     не нужно, включай только если что-то в UI не грузится) ---
-# www.youtube.com
-# i.ytimg.com
-# yt3.ggpht.com
-# maps.googleapis.com
-# www.google-analytics.com
-# www.googletagmanager.com
-# static.doubleclick.net
-# td.doubleclick.net
-# googleads.g.doubleclick.net
+waa-pa.clients6.google.com

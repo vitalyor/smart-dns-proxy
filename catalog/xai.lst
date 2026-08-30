@@ -1,10 +1,9 @@
 # xAI — Grok (grok.com, x.ai) + X / Twitter (Grok встроен в x.com)
 #
-# Голая строка = домен И все поддомены. x.ai покрывает api./auth.x.ai;
-# grok.com покрывает cli-chat-proxy./code./assets.grok.com. Точный хост — full:host.
-#
-# Источники (проверено): xAI «Enterprise Deployments» (docs.x.ai/build/enterprise)
-# для xAI/Grok; домены X — itdoginfo/allow-domains (twitter.lst), сверено вручную.
+# Только домены, которым нужен зарубежный egress. Голая строка = домен и все
+# поддомены (x.ai → api./auth.x.ai; grok.com → cli-chat-proxy./code./assets.grok.com).
+# Точный хост — full:host.
+# Источники: xAI «Enterprise Deployments» (docs.x.ai/build/enterprise) + домены X.
 
 # --- xAI / Grok ---
 x.ai
@@ -16,20 +15,3 @@ x.com
 twitter.com
 t.co
 twimg.com
-twttr.com
-twttr.net
-twtrdns.net
-ads-twitter.com
-cms-twdigitalassets.com
-periscope.tv
-pscp.tv
-tweetdeck.com
-twitter.biz
-twitter.jp
-twittercommunity.com
-twitterflightschool.com
-twitterinc.com
-twitteroauth.com
-twitterstat.us
-twvid.com
-vine.co
