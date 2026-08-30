@@ -20,9 +20,5 @@ oaiusercontent.com
 # --- Sora ---
 sora.com
 
-# --- Конфиг/флаги функций (Statsig, используется ChatGPT) ---
-featureassets.org
-
-# --- Только мобильное приложение / голосовой режим (для веба не нужно) ---
-# register.appattest.apple.com   # аттестация iOS-приложения (домен Apple)
-# *.livekit.cloud                # Advanced Voice Mode (LiveKit), realtime-голос
+# Сторонние домены (Statsig featureassets.org, Apple app-attest, LiveKit-голос)
+# намеренно НЕ включены: они общие/не заблокированы, гнать их через egress вредно.
