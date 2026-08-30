@@ -29,8 +29,8 @@ var DefaultParams = Argon2Params{Time: 3, Memory: 64 * 1024, Threads: 4, KeyLen:
 
 // HashPassword returns a PHC-formatted Argon2id hash.
 func HashPassword(pw string, p Argon2Params) (string, error) {
-	if len(pw) < 12 {
-		return "", errors.New("password must be at least 12 characters")
+	if len(pw) < 8 {
+		return "", errors.New("password must be at least 8 characters")
 	}
 	salt := make([]byte, p.SaltLen)
 	if _, err := rand.Read(salt); err != nil {

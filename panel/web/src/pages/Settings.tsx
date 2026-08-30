@@ -394,7 +394,7 @@ function ChangePassword({ onClose, onDone }: { onClose: () => void; onDone: () =
     }>
       <Field label="Текущий пароль"><input className="input" type="password" autoComplete="current-password"
         value={cur} onChange={(e) => setCur(e.target.value)} /></Field>
-      <Field label="Новый пароль" hint="Минимум 12 символов." error={error}>
+      <Field label="Новый пароль" hint="Минимум 8 символов." error={error}>
         <input className="input" type="password" autoComplete="new-password"
           value={next} onChange={(e) => setNext(e.target.value)} />
       </Field>
