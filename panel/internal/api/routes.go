@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("DELETE /nodes/{id}", s.wrap("nodes.delete", v("owner", s.deleteNode)))
 	api.HandleFunc("POST /nodes/{id}/maintenance", s.wrap("nodes.maintenance", v("operator", s.nodeMaintenance)))
 	api.HandleFunc("POST /nodes/{id}/certificate", s.wrap("nodes.certificate", v("operator", s.nodeCertificate)))
+	api.HandleFunc("GET /nodes/{id}/dns-log", s.wrap("nodes.dnslog", v("viewer", s.nodeDNSLog)))
 	api.HandleFunc("POST /nodes", s.wrap("nodes.create", v("operator", s.createNode)))
 
 	// --- groups ---

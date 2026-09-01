@@ -33,6 +33,7 @@ func main() {
 		listen     = flag.String("listen", env("MGMT_ADDR", ":3333"), "management listen address the panel connects to")
 		tlsDir     = flag.String("tls-dir", env("TLS_DIR", ""), "directory for panel-issued DoT/DoH certificates (ingress only)")
 		acmeHTTP   = flag.String("acme-http", env("ACME_HTTP_ADDR", ":80"), "address the HTTP-01 challenge binds during issuance, then closes")
+		dnsLogURL  = flag.String("dns-log-url", env("DNS_LOG_URL", ""), "internal URL of the dns-frontend live query log (ingress only, e.g. http://dns-frontend:9053/log)")
 		metrAddr   = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9104"), "Prometheus metrics address")
 		showVer    = flag.Bool("version", false, "print version and exit")
 	)
@@ -46,7 +47,7 @@ func main() {
 	a, err := agentcore.New(agentcore.Config{
 		StateDir: *stateDir, ListenAddr: *listen, Role: *role,
 		KeepRevisions: 3, Level: level,
-		TLSDir: *tlsDir, ACMEHTTPAddr: *acmeHTTP,
+		TLSDir: *tlsDir, ACMEHTTPAddr: *acmeHTTP, DNSLogURL: *dnsLogURL,
 	})
 	if err != nil {
 		fatal("agent init: %v", err)

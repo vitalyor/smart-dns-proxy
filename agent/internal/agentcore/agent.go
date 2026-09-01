@@ -46,6 +46,10 @@ type Config struct {
 	// ACMEHTTPAddr is the address the HTTP-01 challenge server binds, but only
 	// for the few seconds an issuance runs — it is closed again immediately.
 	ACMEHTTPAddr string
+	// DNSLogURL is the dns-frontend's internal live-query-log URL, proxied to the
+	// panel via GET /v1/dns/log. Empty (e.g. on egress) makes that route report
+	// "no query log on this node" instead of erroring.
+	DNSLogURL string
 }
 
 // Agent is the running node agent (an HTTPS server).
@@ -176,6 +180,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux.HandleFunc("POST /v1/config", a.wrap(a.handleConfig))
 	mux.HandleFunc("GET /v1/health", a.wrap(a.handleHealth))
 	mux.HandleFunc("POST /v1/cert/issue", a.wrap(a.handleCert))
+	mux.HandleFunc("GET /v1/dns/log", a.wrap(a.handleDNSLog))
 
 	srv := &http.Server{
 		Addr:    a.cfg.ListenAddr,

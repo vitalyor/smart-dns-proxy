@@ -227,6 +227,20 @@ h3 { font-size: 14px; }
 .tile-value.ok { color: var(--ok); }
 .tile-value.warn { color: var(--warn); }
 .tile-value.bad { color: var(--danger); }
+.tile-value.accent { color: var(--direct); }
+
+/* ---------- live query log ---------- */
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 70%, transparent); animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.table.logs td { padding: 7px 16px; }
+.proto-tag { margin-left: 8px; font: 500 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); background: var(--surface-2); border-radius: 4px; padding: 2px 5px; vertical-align: middle; }
+.lat { display: flex; align-items: center; gap: 8px; }
+.lat-val { font-size: 12px; color: var(--text-2); min-width: 46px; text-align: right; }
+.lat-val.slow { color: var(--warn); }
+.lat-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
+.lat-fill { display: block; height: 100%; background: var(--direct); border-radius: 2px; }
+.lat-fill.slow { background: var(--warn); }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 
 /* ---------- badges ---------- */
 .badge {
