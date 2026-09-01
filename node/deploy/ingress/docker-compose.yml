@@ -47,6 +47,9 @@ services:
       TLS_DIR: /etc/smartdns/tls
       # The HTTP-01 challenge binds :80 only for the seconds an issuance runs.
       ACME_HTTP_ADDR: ":80"
+      # Live query-log source: the agent proxies dns-frontend's ring to the panel
+      # (GET /v1/dns/log). Internal to the compose network; never published.
+      DNS_LOG_URL: http://dns-frontend:9053/log
     ports:
       # The panel connects here. Open ONLY to the panel IP in the firewall.
       - "${MGMT_BIND:-3333}:3333"
