@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,9 @@ type Server struct {
 	clientTC *dns.Client
 	inflight chan struct{}
 	once     sync.Once
+	// queryLog logs one line per query when SMARTDNS_QUERY_LOG=1 — a temporary
+	// diagnostic, off by default (per-query logging is noisy and reveals hostnames).
+	queryLog bool
 }
 
 // New builds a server bound to a router.
@@ -58,8 +62,12 @@ func New(r *Router) *Server {
 		client:   &dns.Client{Net: "udp", Timeout: 4 * time.Second, UDPSize: 4096},
 		clientTC: &dns.Client{Net: "tcp", Timeout: 5 * time.Second},
 		inflight: make(chan struct{}, maxc),
+		queryLog: os.Getenv("SMARTDNS_QUERY_LOG") == "1",
 	}
 	s.upstream.Store(&c.DNS.Upstream)
+	if s.queryLog {
+		slog.Info("query logging enabled (SMARTDNS_QUERY_LOG=1)")
+	}
 	return s
 }
 
@@ -90,37 +98,51 @@ func (h dnsHandler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 }
 
 // Handle produces the response for one query. Exported for tests.
-func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string) *dns.Msg {
+func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string) (resp *dns.Msg) {
 	start := time.Now()
 	mInflight.Add(1)
+	decision, qname, qtype := "malformed", "", ""
 	defer func() {
 		mInflight.Add(-1)
 		mLatency.Observe(time.Since(start).Seconds(), "proto", proto)
+		if s.queryLog {
+			rcode := "nil"
+			if resp != nil {
+				rcode = dns.RcodeToString[resp.Rcode]
+			}
+			slog.Info("dnsq", "proto", proto, "client", client.String(),
+				"name", qname, "type", qtype, "decision", decision,
+				"rcode", rcode, "ms", time.Since(start).Milliseconds())
+		}
 	}()
 
 	if len(req.Question) != 1 || req.Opcode != dns.OpcodeQuery {
 		mRejected.Inc("reason", "malformed")
 		return refuse(req, dns.RcodeFormatError)
 	}
+	q := req.Question[0]
+	qname = NormalizeQName(q.Name)
+	qtype = dns.TypeToString[q.Qtype]
+
 	if !s.Router.AllowClient(client, dohToken) {
 		mRejected.Inc("reason", "acl")
+		decision = "denied:acl"
 		return refuse(req, dns.RcodeRefused)
 	}
 	if !s.limiter.allow(client) {
 		mRejected.Inc("reason", "rate_limit")
+		decision = "denied:ratelimit"
 		return refuse(req, dns.RcodeRefused)
 	}
 
-	q := req.Question[0]
-	host := NormalizeQName(q.Name)
-	qtype := dns.TypeToString[q.Qtype]
-	svc := s.Router.Lookup(host)
-
+	svc := s.Router.Lookup(qname)
 	if svc == nil {
 		mQueries.Inc("proto", proto, "qtype", qtype, "kind", "recursive")
+		decision = "direct"
 		return s.forward(req, proto)
 	}
 	mQueries.Inc("proto", proto, "qtype", qtype, "kind", "managed")
+	decision = "managed:" + svc.Slug
 	return s.synthesize(req, svc, q, proto)
 }
 
