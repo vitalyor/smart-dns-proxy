@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -200,6 +201,30 @@ func (s *Server) nodeMaintenance(w http.ResponseWriter, r *http.Request) error {
 // ACME HTTP-01. The node opens :80 only for the challenge and hot-reloads the
 // new cert on its own. Issuance failures (e.g. :80 unreachable) come back as
 // {ok:false, error} with HTTP 200 so the operator sees the reason.
+// nodeDNSLog streams a node's live query log to the panel UI. It forwards the
+// raw JSON from the node (which carries the incremental ?after cursor) so the
+// browser can poll cheaply.
+func (s *Server) nodeDNSLog(w http.ResponseWriter, r *http.Request) error {
+	if s.Cfg.Pusher == nil {
+		return fmt.Errorf("push client is not configured on this panel")
+	}
+	var after uint64
+	if v := r.URL.Query().Get("after"); v != "" {
+		after, _ = strconv.ParseUint(v, 10, 64)
+	}
+	t, err := s.targetFor(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	raw, err := s.Cfg.Pusher.FetchDNSLog(r.Context(), t, after)
+	if err != nil {
+		return fmt.Errorf("нода недоступна: %w", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+	return nil
+}
+
 func (s *Server) nodeCertificate(w http.ResponseWriter, r *http.Request) error {
 	if s.Cfg.Pusher == nil {
 		return fmt.Errorf("push client is not configured on this panel")

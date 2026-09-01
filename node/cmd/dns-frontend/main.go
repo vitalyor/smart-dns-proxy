@@ -39,6 +39,7 @@ func main() {
 		certFile = flag.String("cert", env("TLS_CERT_FILE", ""), "TLS certificate for DoT/DoH")
 		keyFile  = flag.String("key", env("TLS_KEY_FILE", ""), "TLS key for DoT/DoH")
 		metrAddr = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9101"), "Prometheus metrics listen address")
+		logAddr  = flag.String("log-addr", env("DNS_LOG_ADDR", ":9053"), "internal HTTP address serving the live query log (reached by the node-agent only)")
 		showVer  = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -133,6 +134,11 @@ func main() {
 		mm := http.NewServeMux()
 		mm.Handle("/metrics", metrics.Handler())
 		go serveHTTP(&http.Server{Addr: *metrAddr, Handler: mm, ReadHeaderTimeout: 5 * time.Second}, false, "metrics")
+	}
+	if *logAddr != "" {
+		lm := http.NewServeMux()
+		lm.HandleFunc("/log", srv.LogHandler())
+		go serveHTTP(&http.Server{Addr: *logAddr, Handler: lm, ReadHeaderTimeout: 5 * time.Second}, false, "query-log")
 	}
 
 	sig := make(chan os.Signal, 1)

@@ -12,11 +12,12 @@ import RuleSetDetail from "./pages/RuleSetDetail";
 import Revisions from "./pages/Revisions";
 import Devices from "./pages/Devices";
 import Health from "./pages/Health";
+import Logs from "./pages/Logs";
 import Audit from "./pages/Audit";
 import Settings from "./pages/Settings";
 import Setup from "./pages/Setup";
 import {
-  IconGauge, IconServer, IconArrowIn, IconGrid,
+  IconGauge, IconServer, IconArrowIn, IconGrid, IconList,
   IconLayers, IconPhone, IconPulse, IconShield, IconSliders, IconLogout,
   IconMoon, IconSun, IconPlay,
 } from "./icons";
@@ -41,6 +42,7 @@ const NAV = [
   { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
   { to: "/devices", label: "Устройства", Icon: IconPhone },
   { group: "Наблюдение" },
+  { to: "/logs", label: "Логи запросов", Icon: IconList },
   { to: "/health", label: "Здоровье и события", Icon: IconPulse },
   { to: "/audit", label: "Журнал аудита", Icon: IconShield },
   { to: "/settings", label: "Настройки", Icon: IconSliders },
@@ -148,6 +150,7 @@ export default function App() {
             <Route path="/rule-sets/:id" element={<RuleSetDetail />} />
             <Route path="/revisions" element={<Revisions />} />
             <Route path="/devices" element={<Devices />} />
+            <Route path="/logs" element={<Logs />} />
             <Route path="/health" element={<Health />} />
             <Route path="/audit" element={<Audit />} />
             <Route path="/settings" element={<Settings me={me} onChanged={load} />} />

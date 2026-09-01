@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"smartdns/shared/model"
@@ -186,6 +187,23 @@ func (c *Client) IssueCert(ctx context.Context, t Target, req CertRequest) (*Cer
 		return nil, err
 	}
 	return &out, nil
+}
+
+// FetchDNSLog returns the node's live query-log JSON (raw), passing the
+// incremental cursor through. Short timeout: it is polled continuously.
+func (c *Client) FetchDNSLog(ctx context.Context, t Target, after uint64) ([]byte, error) {
+	path := "/v1/dns/log"
+	if after > 0 {
+		path += "?after=" + strconv.FormatUint(after, 10)
+	}
+	raw, code, err := c.doTimeout(ctx, t, http.MethodGet, path, nil, 6*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("node returned HTTP %d", code)
+	}
+	return raw, nil
 }
 
 // Poll fetches a node's health.

@@ -44,9 +44,11 @@ type Server struct {
 	clientTC *dns.Client
 	inflight chan struct{}
 	once     sync.Once
-	// queryLog logs one line per query when SMARTDNS_QUERY_LOG=1 — a temporary
-	// diagnostic, off by default (per-query logging is noisy and reveals hostnames).
+	// queryLog logs one line per query to stdout when SMARTDNS_QUERY_LOG=1 — a
+	// noisy terminal diagnostic, off by default.
 	queryLog bool
+	// log is the always-on in-memory ring the panel reads for the live Logs view.
+	log *ring
 }
 
 // New builds a server bound to a router.
@@ -63,6 +65,7 @@ func New(r *Router) *Server {
 		clientTC: &dns.Client{Net: "tcp", Timeout: 5 * time.Second},
 		inflight: make(chan struct{}, maxc),
 		queryLog: os.Getenv("SMARTDNS_QUERY_LOG") == "1",
+		log:      newRing(1000),
 	}
 	s.upstream.Store(&c.DNS.Upstream)
 	if s.queryLog {
@@ -104,15 +107,20 @@ func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string)
 	decision, qname, qtype := "malformed", "", ""
 	defer func() {
 		mInflight.Add(-1)
-		mLatency.Observe(time.Since(start).Seconds(), "proto", proto)
+		took := time.Since(start)
+		mLatency.Observe(took.Seconds(), "proto", proto)
+		rcode := "nil"
+		if resp != nil {
+			rcode = dns.RcodeToString[resp.Rcode]
+		}
+		s.log.add(LogEntry{
+			TS: start.UnixMilli(), Proto: proto, Name: qname, Type: qtype,
+			Decision: decision, Rcode: rcode, MS: took.Milliseconds(),
+		})
 		if s.queryLog {
-			rcode := "nil"
-			if resp != nil {
-				rcode = dns.RcodeToString[resp.Rcode]
-			}
 			slog.Info("dnsq", "proto", proto, "client", client.String(),
 				"name", qname, "type", qtype, "decision", decision,
-				"rcode", rcode, "ms", time.Since(start).Milliseconds())
+				"rcode", rcode, "ms", took.Milliseconds())
 		}
 	}()
 
