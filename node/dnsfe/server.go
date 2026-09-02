@@ -114,7 +114,7 @@ func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string)
 			rcode = dns.RcodeToString[resp.Rcode]
 		}
 		s.log.add(LogEntry{
-			TS: start.UnixMilli(), Proto: proto, Name: qname, Type: qtype,
+			TS: start.UnixMilli(), Client: client.String(), Proto: proto, Name: qname, Type: qtype,
 			Decision: decision, Rcode: rcode, MS: took.Milliseconds(),
 		})
 		if s.queryLog {

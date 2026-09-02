@@ -13,6 +13,7 @@ import (
 type LogEntry struct {
 	Seq      uint64 `json:"seq"`
 	TS       int64  `json:"ts"` // unix milliseconds
+	Client   string `json:"client"`
 	Proto    string `json:"proto"`
 	Name     string `json:"name"`
 	Type     string `json:"type"`
