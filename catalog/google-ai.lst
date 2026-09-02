@@ -28,12 +28,14 @@ labs.google
 deepmind.google
 deepmind.com
 
-# --- Бэкенды Gemini/AI Studio (конкретные хосты, только свои) ---
-jnn-pa.googleapis.com
-proactivebackend-pa.googleapis.com
-geller-pa.googleapis.com
-aisandbox-pa.googleapis.com
-robinfrontend-pa.googleapis.com
+# --- Все приватные API-бэкенды Google (-pa): сигналинг, конфиг, чат и т.п.
+#     Ловим regex-ом, иначе новый бэкенд утечёт напрямую и порвёт сессию по IP.
+regexp:-pa\.googleapis\.com$
+regexp:-pa\.clients6\.google\.com$
 aida.googleapis.com
-alkalimakersuite-pa.clients6.google.com
-waa-pa.clients6.google.com
+
+# --- Авторизация и сессия. Без них часть запросов Gemini уходит с реального IP,
+#     а остальное — через egress → Google видит «подозрительный трафик» (IP≠IP).
+#     Побочка: вход в Google-аккаунт пойдёт через egress (может быть «вход из США»).
+securetoken.googleapis.com
+accounts.google.com
