@@ -123,8 +123,21 @@ func main() {
 	if *dohAddr != "" && tlsCfg != nil {
 		h := tlsCfg.Clone()
 		h.NextProtos = []string{"h2", "http/1.1"}
-		go serveHTTP(&http.Server{Addr: *dohAddr, Handler: mux, TLSConfig: h,
-			ReadHeaderTimeout: 5 * time.Second}, true, "doh")
+		srv := &http.Server{Addr: *dohAddr, Handler: mux, TLSConfig: h, ReadHeaderTimeout: 5 * time.Second}
+		// The sni-proxy forwards DoH with a PROXY-protocol header so the real
+		// client IP survives; direct clients on :8443 send none and pass through.
+		ln, err := net.Listen("tcp", *dohAddr)
+		if err != nil {
+			slog.Error("cannot listen for DoH", "addr", *dohAddr, "err", err)
+			os.Exit(1)
+		}
+		go func() {
+			slog.Info("listening", "listener", "doh", "addr", *dohAddr)
+			if err := srv.ServeTLS(dnsfe.WrapProxyProto(ln), "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("listener stopped", "listener", "doh", "err", err)
+				os.Exit(1)
+			}
+		}()
 	}
 	if *dohPlain != "" {
 		go serveHTTP(&http.Server{Addr: *dohPlain, Handler: mux,

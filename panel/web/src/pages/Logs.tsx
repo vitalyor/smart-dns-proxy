@@ -4,7 +4,7 @@ import { Card, ErrorState, Notice, Spinner, useAsync } from "../ui";
 import { IconPlay, IconRefresh } from "../icons";
 
 type Entry = {
-  seq: number; ts: number; proto: string; name: string;
+  seq: number; ts: number; client: string; proto: string; name: string;
   type: string; decision: string; rcode: string; ms: number;
 };
 type LogResp = { available?: boolean; seq: number; entries: Entry[] };
@@ -164,12 +164,12 @@ export default function Logs() {
               <div className="table-wrap">
                 <table className="table logs">
                   <thead>
-                    <tr><th style={{ width: 92 }}>Время</th><th>Домен</th><th style={{ width: 64 }}>Тип</th>
-                      <th style={{ width: 150 }}>Решение</th><th style={{ width: 130 }}>Задержка</th><th style={{ width: 96 }}>Ответ</th></tr>
+                    <tr><th style={{ width: 92 }}>Время</th><th style={{ width: 128 }}>Источник</th><th>Домен</th><th style={{ width: 56 }}>Тип</th>
+                      <th style={{ width: 150 }}>Решение</th><th style={{ width: 130 }}>Задержка</th><th style={{ width: 90 }}>Ответ</th></tr>
                   </thead>
                   <tbody>
                     {shown.length === 0 ? (
-                      <tr><td colSpan={6}>
+                      <tr><td colSpan={7}>
                         <div className="empty" style={{ padding: 32 }}>
                           <h3>{paused ? "Поток на паузе" : "Пока тихо"}</h3>
                           <p className="muted small">
@@ -196,6 +196,7 @@ function Row({ e }: { e: Entry }) {
   return (
     <tr>
       <td className="tiny dim num">{new Date(e.ts).toLocaleTimeString("ru-RU")}</td>
+      <td className="tiny mono" title={e.client || undefined}>{e.client || "—"}</td>
       <td className="mono small" style={{ wordBreak: "break-all" }}>
         {e.name}
         <span className="proto-tag">{e.proto}</span>

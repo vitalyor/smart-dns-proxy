@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"smartdns/node/dnsfe"
 	"smartdns/shared/domainset"
 	"smartdns/shared/metrics"
 	"smartdns/shared/model"
@@ -239,6 +240,14 @@ func (p *Proxy) dohForward(c net.Conn, host string, raw []byte) bool {
 		mReject.Inc("reason", "doh_backend_unreachable")
 		slog.Warn("DoH backend unreachable", "backend", backend, "err", err)
 		return true
+	}
+	// Carry the real client address to dns-frontend via a PROXY-protocol header,
+	// so the live query log shows the source device, not this proxy.
+	if hdr := dnsfe.ProxyHeaderV1(c.RemoteAddr(), up.RemoteAddr()); hdr != "" {
+		if _, err := up.Write([]byte(hdr)); err != nil {
+			_ = up.Close()
+			return true
+		}
 	}
 	if _, err := up.Write(raw); err != nil {
 		_ = up.Close()
