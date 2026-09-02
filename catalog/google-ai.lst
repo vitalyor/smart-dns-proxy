@@ -39,5 +39,4 @@ aida.googleapis.com
 #     Побочка: вход в Google-аккаунт пойдёт через egress (может быть «вход из США»).
 securetoken.googleapis.com
 accounts.google.com
-www.google.com
 regexp:^clients[0-9]+\.google\.com$
