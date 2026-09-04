@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ago, timeTitle } from "../api";
 import {
   Card, Confirm, Copyable, ErrorState, Field, Modal, Notice, Segmented, Spinner,
-  StatusBadge, errText, usePoll, useToast,
+  StatusBadge, errText, useAsync, usePoll, useToast,
 } from "../ui";
 
 type Role = "ingress" | "egress";
@@ -223,10 +223,59 @@ export default function Nodes() {
 
 // CertModal issues a DoT/DoH certificate for an ingress node via the panel →
 // node ACME HTTP-01 flow. The node opens :80 only for the challenge.
+// isHostname catches the fat-finger cases before an ACME order is spent: a bare
+// IP, a pasted URL with scheme/port/path, spaces, or a single label with no dot.
+function isHostname(s: string): boolean {
+  if (!s || s.length > 253) return false;
+  if (/[/:\s]/.test(s)) return false; // scheme, port, path, whitespace
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) return false; // IP literal, not a name
+  return /^([a-z0-9](-*[a-z0-9])*)(\.[a-z0-9](-*[a-z0-9])*)+$/i.test(s);
+}
+
+// certReason turns a raw ACME/transport failure into a plain-language cause and
+// a fix, so a failed issuance is actionable from the panel without SSHing in.
+// The raw text is still shown verbatim under a details toggle.
+function certReason(raw: string): { title: string; fix?: string } {
+  const e = (raw || "").toLowerCase();
+  if (/(rate ?limit|too many|ratelimited)/.test(e))
+    return {
+      title: "Let’s Encrypt временно ограничил выпуск для этого домена",
+      fix: "Слишком много сертификатов на этот домен за неделю. Подождите или включите «Тестовый режим (staging)», чтобы проверить настройку без лимитов.",
+    };
+  if (/(no such host|lookup|could not resolve|no address|name resolution)/.test(e))
+    return {
+      title: "Домен вообще не резолвится",
+      fix: "Опечатка в имени или ещё нет A-записи. Проверьте домен и что A-запись создана в DNS.",
+    };
+  if (/(a-record|validation failed|:80|unreachable|connection refused|unauthorized|403|timeout|timed out)/.test(e))
+    return {
+      title: "Домен не подтвердил, что указывает на эту ноду",
+      fix: "A-запись домена должна вести на IP этой ноды, а порт 80 — быть доступен из интернета на время выпуска (ноду откроет его на пару секунд сама). Проверьте оба условия.",
+    };
+  if (/(no tls directory|only issued on ingress)/.test(e))
+    return { title: "Нода не может выпускать сертификат", fix: "Сертификаты выпускаются только на ingress-нодах с настроенным TLS_DIR." };
+  return { title: "Не удалось выпустить сертификат" };
+}
+
+function CertFailure({ raw }: { raw: string }) {
+  const r = certReason(raw);
+  return (
+    <Notice kind="bad" title={r.title}>
+      {r.fix && <p style={{ margin: "0 0 8px" }}>{r.fix}</p>}
+      <details>
+        <summary className="small muted" style={{ cursor: "pointer" }}>Что вернула нода</summary>
+        <pre className="mono tiny" style={{ whiteSpace: "pre-wrap", margin: "6px 0 0" }}>{raw}</pre>
+      </details>
+    </Notice>
+  );
+}
+
 function CertModal({ node, onClose, onIssued }: {
   node: Node; onClose: () => void; onIssued: () => void;
 }) {
+  const cfg = useAsync<{ settings: Record<string, any> }>(() => api("/settings"), []);
   const [domain, setDomain] = useState("");
+  const [touched, setTouched] = useState(false);
   const [email, setEmail] = useState("");
   const [force, setForce] = useState(false);
   const [staging, setStaging] = useState(false);
@@ -235,12 +284,25 @@ function CertModal({ node, onClose, onIssued }: {
   const [result, setResult] = useState<{ ok: boolean; not_after?: string; domain?: string; error?: string } | null>(null);
   const toast = useToast();
 
+  // Names the resolver actually answers on. The domain field is prefilled from
+  // them so a typo can't quietly burn an ACME order on the wrong hostname.
+  const names = [cfg.data?.settings.doh_hostname, cfg.data?.settings.dot_hostname]
+    .map((x) => (x ?? "").trim()).filter(Boolean);
+  const configured = names[0] ?? "";
+  useEffect(() => {
+    if (!touched && configured) setDomain(configured);
+  }, [configured, touched]);
+
+  const d = domain.trim();
+  const valid = isHostname(d);
+  const mismatch = d !== "" && names.length > 0 && !names.includes(d);
+
   const issue = async () => {
     setBusy(true); setError(""); setResult(null);
     try {
       const r = await api<{ ok: boolean; not_after?: string; domain?: string; error?: string }>(
         `/nodes/${node.id}/certificate`,
-        { method: "POST", body: { domain: domain.trim(), email: email.trim(), force, staging } },
+        { method: "POST", body: { domain: d, email: email.trim(), force, staging } },
       );
       setResult(r);
       if (r.ok) { toast({ kind: "ok", title: "Сертификат выпущен", body: `Действует до ${r.not_after}` }); onIssued(); }
@@ -251,7 +313,7 @@ function CertModal({ node, onClose, onIssued }: {
     <Modal title={`Сертификат для ${node.name}`} onClose={onClose} footer={
       <>
         <button className="btn" onClick={onClose}>Закрыть</button>
-        <button className="btn primary" disabled={busy || !domain.trim()} onClick={issue}>
+        <button className="btn primary" disabled={busy || !valid} onClick={issue}>
           {busy ? <span className="spin" /> : null}Выпустить
         </button>
       </>
@@ -262,10 +324,20 @@ function CertModal({ node, onClose, onIssued }: {
         A-записью указывал на эту ноду, а порт 80 был доступен из интернета. Новый сертификат
         dns-frontend подхватит сам, без перезапуска.
       </Notice>
-      <Field label="Домен" hint="Имя, по которому устройства обращаются к DoT/DoH.">
+      <Field label="Домен"
+        hint={configured
+          ? "Подставлен из настроек (имя DoH/DoT). Меняйте только осознанно."
+          : "В настройках не задано имя DoH/DoT — задайте его там, чтобы домен подставлялся сам."}
+        error={d !== "" && !valid ? "Похоже на не-домен: уберите http://, порт, путь и пробелы, IP не подойдёт." : undefined}>
         <input className="input mono" autoFocus value={domain} placeholder="dns.example.com"
-          onChange={(e) => setDomain(e.target.value)} />
+          onChange={(e) => { setTouched(true); setDomain(e.target.value); }} />
       </Field>
+      {mismatch && (
+        <Notice kind="warn" title="Домен не совпадает с настроенным именем резолвера">
+          Устройства обращаются к <b className="mono">{names.join(", ")}</b>. Сертификат уйдёт на
+          другое имя — это правильно, только если вы заранее готовите смену домена. Иначе исправьте.
+        </Notice>
+      )}
       <Field label="Email для Let’s Encrypt" hint="Необязательно. Туда придут напоминания об истечении.">
         <input className="input mono" value={email} placeholder="you@example.com"
           onChange={(e) => setEmail(e.target.value)} />
@@ -278,16 +350,12 @@ function CertModal({ node, onClose, onIssued }: {
         <input type="checkbox" checked={staging} onChange={(e) => setStaging(e.target.checked)} />
         Тестовый режим (staging) — без лимитов, но браузеры такому не доверяют
       </label>
-      {result && !result.ok && (
-        <div className="notice bad" role="alert"><span className="notice-bar" />
-          <div className="n-body">Не удалось: {result.error}</div></div>
-      )}
       {result && result.ok && (
         <Notice kind="info" title="Готово">
           Сертификат для {result.domain} выпущен, действует до {result.not_after}.
         </Notice>
       )}
-      {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
+      {(error || (result && !result.ok)) && <CertFailure raw={error || result?.error || ""} />}
     </Modal>
   );
 }
