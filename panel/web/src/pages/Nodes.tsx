@@ -254,6 +254,11 @@ function certReason(raw: string): { title: string; fix?: string } {
     };
   if (/(no tls directory|only issued on ingress)/.test(e))
     return { title: "Нода не может выпускать сертификат", fix: "Сертификаты выпускаются только на ingress-нодах с настроенным TLS_DIR." };
+  if (/(certificate not found|finalize|order is not ready|too many pending)/.test(e))
+    return {
+      title: "Let’s Encrypt не завершил выпуск (временный сбой)",
+      fix: "Обычно лечится повторным нажатием «Выпустить» — особенно если A-запись появилась только что. Если повторяется, подождите минуту и попробуйте снова.",
+    };
   return { title: "Не удалось выпустить сертификат" };
 }
 
