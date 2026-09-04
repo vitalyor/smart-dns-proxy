@@ -90,8 +90,12 @@ func (a *Agent) handleCert(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// issueCert runs a full ACME HTTP-01 order and writes fullchain.pem/privkey.pem
-// into the TLS dir the dns-frontend hot-reloads.
+// issueCert runs an ACME HTTP-01 order and writes fullchain.pem/privkey.pem into
+// the TLS dir the dns-frontend hot-reloads. Let's Encrypt occasionally leaves an
+// order in a state where finalize returns a transient 404 ("certificate not
+// found") that a brand-new order clears — so the whole order is retried a few
+// times. Each attempt uses a fresh key and order (a previously finalized order's
+// cert can't be paired with a new key, so reusing it is not an option).
 func (a *Agent) issueCert(ctx context.Context, req certRequest) (*certResult, error) {
 	dir := acmeDirLE
 	if req.Staging {
@@ -112,9 +116,46 @@ func (a *Agent) issueCert(ctx context.Context, req certRequest) (*certResult, er
 		return nil, fmt.Errorf("acme register: %w", err)
 	}
 
+	const attempts = 3
+	var chain, keyPEM []byte
+	var notAfter time.Time
+	for attempt := 1; ; attempt++ {
+		chain, keyPEM, notAfter, err = a.runACMEOrder(ctx, client, req)
+		if err == nil {
+			break
+		}
+		if attempt >= attempts || !isRetryableACME(err) {
+			return nil, err
+		}
+		slog.Warn("cert order failed, retrying with a fresh order",
+			"domain", req.Domain, "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(attempt) * 3 * time.Second):
+		}
+	}
+
+	// Write the key first (0600), then the chain, so dns-frontend never reloads a
+	// chain whose key has not landed yet.
+	if err := writeFileAtomic(filepath.Join(a.cfg.TLSDir, "privkey.pem"), keyPEM, 0o600); err != nil {
+		return nil, err
+	}
+	if err := writeFileAtomic(filepath.Join(a.cfg.TLSDir, "fullchain.pem"), chain, 0o644); err != nil {
+		return nil, err
+	}
+	return &certResult{OK: true, Domain: req.Domain, NotAfter: notAfter.UTC().Format(time.RFC3339)}, nil
+}
+
+// runACMEOrder performs one full HTTP-01 order and returns the PEM chain, the PEM
+// private key it was issued for, and the leaf's expiry. It does not touch disk,
+// so a failed attempt leaves the live certificate untouched.
+func (a *Agent) runACMEOrder(ctx context.Context, client *acme.Client, req certRequest) ([]byte, []byte, time.Time, error) {
+	fail := func(err error) ([]byte, []byte, time.Time, error) { return nil, nil, time.Time{}, err }
+
 	order, err := client.AuthorizeOrder(ctx, acme.DomainIDs(req.Domain))
 	if err != nil {
-		return nil, fmt.Errorf("authorize order: %w", err)
+		return fail(fmt.Errorf("authorize order: %w", err))
 	}
 
 	// Collect the HTTP-01 challenge responses before opening :80.
@@ -123,7 +164,7 @@ func (a *Agent) issueCert(ctx context.Context, req certRequest) (*certResult, er
 	for _, authzURL := range order.AuthzURLs {
 		authz, err := client.GetAuthorization(ctx, authzURL)
 		if err != nil {
-			return nil, fmt.Errorf("get authorization: %w", err)
+			return fail(fmt.Errorf("get authorization: %w", err))
 		}
 		if authz.Status == acme.StatusValid {
 			continue
@@ -136,11 +177,11 @@ func (a *Agent) issueCert(ctx context.Context, req certRequest) (*certResult, er
 			}
 		}
 		if chal == nil {
-			return nil, fmt.Errorf("no http-01 challenge offered for %s", authz.Identifier.Value)
+			return fail(fmt.Errorf("no http-01 challenge offered for %s", authz.Identifier.Value))
 		}
 		resp, err := client.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		responses[client.HTTP01ChallengePath(chal.Token)] = resp
 		accept = append(accept, chal)
@@ -149,44 +190,44 @@ func (a *Agent) issueCert(ctx context.Context, req certRequest) (*certResult, er
 	if len(accept) > 0 {
 		stop, err := a.serveChallenges(responses)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		defer stop()
 		for _, chal := range accept {
 			if _, err := client.Accept(ctx, chal); err != nil {
-				return nil, fmt.Errorf("accept challenge: %w", err)
+				return fail(fmt.Errorf("accept challenge: %w", err))
 			}
 		}
 		for _, authzURL := range order.AuthzURLs {
 			if _, err := client.WaitAuthorization(ctx, authzURL); err != nil {
-				return nil, fmt.Errorf("domain validation failed (is :80 reachable and the DNS A-record pointed here?): %w", err)
+				return fail(fmt.Errorf("domain validation failed (is :80 reachable and the DNS A-record pointed here?): %w", err))
 			}
 		}
 	}
 
 	if _, err := client.WaitOrder(ctx, order.URI); err != nil {
-		return nil, fmt.Errorf("wait order: %w", err)
+		return fail(fmt.Errorf("wait order: %w", err))
 	}
 
 	certKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	csr, err := x509.CreateCertificateRequest(rand.Reader,
 		&x509.CertificateRequest{DNSNames: []string{req.Domain}}, certKey)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	der, _, err := client.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
 	if err != nil {
-		return nil, fmt.Errorf("finalize: %w", err)
+		return fail(fmt.Errorf("finalize: %w", err))
 	}
 	if len(der) == 0 {
-		return nil, errors.New("acme returned no certificate")
+		return fail(errors.New("acme returned no certificate"))
 	}
 	leaf, err := x509.ParseCertificate(der[0])
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 
 	var chain []byte
@@ -195,19 +236,29 @@ func (a *Agent) issueCert(ctx context.Context, req certRequest) (*certResult, er
 	}
 	keyDER, err := x509.MarshalECPrivateKey(certKey)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return chain, keyPEM, leaf.NotAfter, nil
+}
 
-	// Write the key first (0600), then the chain, so dns-frontend never reloads a
-	// chain whose key has not landed yet.
-	if err := writeFileAtomic(filepath.Join(a.cfg.TLSDir, "privkey.pem"), keyPEM, 0o600); err != nil {
-		return nil, err
+// isRetryableACME reports whether an order failure is worth a fresh attempt.
+// Transient finalize/order/network hiccups are; a domain-validation failure is
+// not — retrying it in a tight loop only burns Let's Encrypt's per-hour budget.
+func isRetryableACME(err error) bool {
+	s := strings.ToLower(err.Error())
+	if strings.Contains(s, "domain validation failed") {
+		return false
 	}
-	if err := writeFileAtomic(filepath.Join(a.cfg.TLSDir, "fullchain.pem"), chain, 0o644); err != nil {
-		return nil, err
+	for _, sub := range []string{
+		"finalize", "certificate not found", "wait order", "order is not ready",
+		"timeout", "timed out", "connection reset", "unexpected eof",
+	} {
+		if strings.Contains(s, sub) {
+			return true
+		}
 	}
-	return &certResult{OK: true, Domain: req.Domain, NotAfter: leaf.NotAfter.UTC().Format(time.RFC3339)}, nil
+	return false
 }
 
 // serveChallenges binds the ACME HTTP-01 address and serves the challenge
