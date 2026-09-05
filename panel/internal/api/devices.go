@@ -117,30 +117,37 @@ func (s *Server) deleteDeviceProfile(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// downloadDeviceProfile renders the platform-specific setup artifact.
-func (s *Server) downloadDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	p, err := store.One[store.DeviceProfile](r.Context(), s.DB,
-		`SELECT id, name, type, config, revoked_at, version, created_at FROM device_profiles WHERE id=$1`, id)
-	if err != nil {
-		return err
+// renderDeviceArtifact produces the platform-specific setup file for a profile:
+// a .mobileconfig for Apple, Markdown instructions elsewhere. Shared by the
+// operator download and the subscription page, so both stay identical.
+func renderDeviceArtifact(p store.DeviceProfile) (contentType, filename string, body []byte) {
+	dohURL, dotHost, v4 := deviceAddressesFull(p)
+	switch p.Type {
+	case "apple_doh", "apple_dot":
+		return "application/x-apple-aspen-config", safeName(p.Name) + ".mobileconfig",
+			[]byte(appleMobileconfig(p, dohURL, dotHost, v4))
+	default:
+		return "text/markdown; charset=utf-8", safeName(p.Name) + ".md",
+			[]byte(instructions(p, dohURL, dotHost, v4))
 	}
+}
+
+// deviceAddressesFull unpacks the personal endpoints stored in a profile.
+func deviceAddressesFull(p store.DeviceProfile) (dohURL, dotHost string, v4 []string) {
 	endpoints, _ := p.Config["endpoints"].(map[string]any)
 	dohHost, _ := endpoints["doh_hostname"].(string)
-	dotHost, _ := endpoints["dot_hostname"].(string)
+	dotHost, _ = endpoints["dot_hostname"].(string)
 	dohPath, _ := endpoints["doh_path"].(string)
 	token, _ := p.Config["path_token"].(string)
 	if dohPath == "" {
 		dohPath = "/dns-query"
 	}
-	dohURL := ""
 	if dohHost != "" {
 		dohURL = "https://" + dohHost + strings.TrimRight(dohPath, "/")
 		if token != "" {
 			dohURL += "/" + token
 		}
 	}
-	var v4 []string
 	if raw, ok := endpoints["ingress_ipv4"].([]any); ok {
 		for _, x := range raw {
 			if s, ok := x.(string); ok {
@@ -148,18 +155,20 @@ func (s *Server) downloadDeviceProfile(w http.ResponseWriter, r *http.Request) e
 			}
 		}
 	}
+	return dohURL, dotHost, v4
+}
 
-	switch p.Type {
-	case "apple_doh", "apple_dot":
-		body := appleMobileconfig(p, dohURL, dotHost, v4)
-		w.Header().Set("Content-Type", "application/x-apple-aspen-config")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeName(p.Name)+`.mobileconfig"`)
-		_, _ = w.Write([]byte(body))
-	default:
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeName(p.Name)+`.md"`)
-		_, _ = w.Write([]byte(instructions(p, dohURL, dotHost, v4)))
+// downloadDeviceProfile renders the platform-specific setup artifact.
+func (s *Server) downloadDeviceProfile(w http.ResponseWriter, r *http.Request) error {
+	p, err := store.One[store.DeviceProfile](r.Context(), s.DB,
+		`SELECT * FROM device_profiles WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
 	}
+	ct, name, body := renderDeviceArtifact(p)
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	_, _ = w.Write(body)
 	return nil
 }
 
