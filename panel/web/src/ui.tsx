@@ -104,6 +104,49 @@ export function Card({ title, eyebrow, actions, children, tight }: {
   );
 }
 
+// Раздел: несколько карточек, объединённых одним смыслом. Без него страница
+// читается как свалка плиток — именно это и было главной претензией.
+export function Section({ title, note, actions, children }: {
+  title: string; note?: string; actions?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <section className="section">
+      <header className="section-head">
+        <h2>{title}</h2>
+        {note && <span className="section-note">{note}</span>}
+        <div className="spacer" />
+        {actions}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+export type Tone = "direct" | "managed" | "ok" | "warn" | "bad" | "violet" | "blue";
+
+// Плитка показателя: цветной значок слева даёт зацепку глазу, значение —
+// моноширинное и крупное, подпись объясняет единицы.
+export function Stat({ icon, tone = "direct", label, value, note, state, delta }: {
+  icon: ReactNode; tone?: Tone; label: string; value: ReactNode; note?: ReactNode;
+  state?: "ok" | "warn" | "bad" | "accent"; delta?: { dir: "up" | "down"; text: string };
+}) {
+  return (
+    <div className={`card tile tone-${tone}`}>
+      <span className="tile-ico">{icon}</span>
+      <div className="tile-main">
+        <div className="tile-label">{label}</div>
+        <div className={`tile-value ${state ?? ""}`}>{value}</div>
+        {delta && (
+          <div className={`tile-delta ${delta.dir}`}>
+            {delta.dir === "up" ? "\u2197" : "\u2198"} {delta.text}
+          </div>
+        )}
+        {note && <div className="tile-note">{note}</div>}
+      </div>
+    </div>
+  );
+}
+
 export function Badge({ kind = "", children }: { kind?: string; children: ReactNode }) {
   return <span className={`badge ${kind}`}>{children}</span>;
 }

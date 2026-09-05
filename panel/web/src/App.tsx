@@ -122,6 +122,7 @@ export default function App() {
           </div>
         </div>
 
+        <div className="nav-list">
         {NAV.map((item, i) =>
           "group" in item ? (
             <div key={i} className="nav-group eyebrow">{item.group}</div>
@@ -134,6 +135,7 @@ export default function App() {
             </NavLink>
           )
         )}
+        </div>
 
         <div className="rail-foot">
           <div className="small" style={{ fontWeight: 550 }}>{me.user.email}</div>
