@@ -33,9 +33,9 @@ func NewCloudflare(token string) *Cloudflare {
 }
 
 type cfEnvelope struct {
-	Success bool              `json:"success"`
-	Errors  []cfError         `json:"errors"`
-	Result  json.RawMessage   `json:"result"`
+	Success bool            `json:"success"`
+	Errors  []cfError       `json:"errors"`
+	Result  json.RawMessage `json:"result"`
 }
 
 type cfError struct {

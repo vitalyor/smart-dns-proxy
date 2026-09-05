@@ -93,9 +93,9 @@ type DNSAccess struct {
 	// DoH path tokens deliberately do NOT live here. Access changes far more
 	// often than configuration — a subscriber adding a device must not trigger a
 	// config rollout — so the token set travels on its own channel (ADR 0012).
-	RateLimitQPS   int      `json:"rate_limit_qps"`
-	RateLimitBurst int      `json:"rate_limit_burst"`
-	MaxConcurrent  int      `json:"max_concurrent"`
+	RateLimitQPS   int `json:"rate_limit_qps"`
+	RateLimitBurst int `json:"rate_limit_burst"`
+	MaxConcurrent  int `json:"max_concurrent"`
 }
 
 // DNSConfig is the ingress DNS frontend section.
