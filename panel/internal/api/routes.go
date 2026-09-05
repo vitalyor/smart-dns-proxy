@@ -93,6 +93,10 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("PATCH /subscribers/{id}", s.wrap("subscribers.patch", v("operator", s.patchSubscriber)))
 	api.HandleFunc("DELETE /subscribers/{id}", s.wrap("subscribers.delete", v("operator", s.deleteSubscriber)))
 	api.HandleFunc("POST /subscribers/{id}/rotate", s.wrap("subscribers.rotate", v("operator", s.rotateSubscriber)))
+	api.HandleFunc("GET /subscribers/{id}/devices", s.wrap("subscribers.devices", v("viewer", s.listSubscriberDevices)))
+	api.HandleFunc("POST /subscribers/{id}/devices", s.wrap("subscribers.device.add", v("operator", s.addSubscriberDevice)))
+	api.HandleFunc("DELETE /subscribers/{id}/devices/{device_id}", s.wrap("subscribers.device.delete", v("operator", s.deleteSubscriberDevice)))
+	api.HandleFunc("GET /subscribers/{id}/devices/{device_id}/download", s.wrap("subscribers.device.download", v("viewer", s.downloadSubscriberDevice)))
 
 	// --- machine keys (owner) ---
 	api.HandleFunc("GET /api-keys", s.wrap("apikeys.list", v("owner", s.listAPIKeys)))
@@ -115,11 +119,7 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /instruction-assets", s.wrap("instructions.asset.upload", v("operator", s.uploadAsset)))
 	api.HandleFunc("GET /instruction-assets/{id}", s.wrap("instructions.asset", v("viewer", s.serveAsset)))
 
-	// --- devices & settings ---
-	api.HandleFunc("GET /device-profiles", s.wrap("devices.list", v("viewer", s.listDeviceProfiles)))
-	api.HandleFunc("POST /device-profiles", s.wrap("devices.create", v("operator", s.createDeviceProfile)))
-	api.HandleFunc("DELETE /device-profiles/{id}", s.wrap("devices.delete", v("operator", s.deleteDeviceProfile)))
-	api.HandleFunc("GET /device-profiles/{id}/download", s.wrap("devices.download", v("viewer", s.downloadDeviceProfile)))
+	// --- settings ---
 	api.HandleFunc("GET /settings", s.wrap("settings.get", v("viewer", s.getSettings)))
 	api.HandleFunc("PUT /settings", s.wrap("settings.put", v("owner", s.putSettings)))
 

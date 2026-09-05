@@ -10,9 +10,8 @@ import Services from "./pages/Services";
 import RuleSets from "./pages/RuleSets";
 import RuleSetDetail from "./pages/RuleSetDetail";
 import Revisions from "./pages/Revisions";
-import Devices from "./pages/Devices";
-import Subscribers from "./pages/Subscribers";
-import Instructions from "./pages/Instructions";
+import Users from "./pages/Users";
+import SubscriptionPage from "./pages/SubscriptionPage";
 import Certificates from "./pages/Certificates";
 import Health from "./pages/Health";
 import Logs from "./pages/Logs";
@@ -43,9 +42,8 @@ const NAV = [
   // Общие списки живут внутри сервиса; страница /rule-sets остаётся доступной по
   // прямой ссылке для редкого случая «один список на несколько сервисов».
   { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
-  { to: "/devices", label: "Устройства", Icon: IconPhone },
-  { to: "/subscribers", label: "Подписчики", Icon: IconGlobe },
-  { to: "/instructions", label: "Инструкции", Icon: IconLayers },
+  { to: "/users", label: "Пользователи", Icon: IconPhone },
+  { to: "/subscription-page", label: "Страница подписки", Icon: IconGlobe },
   { to: "/certificates", label: "Сертификат", Icon: IconShield },
   { group: "Наблюдение" },
   { to: "/logs", label: "Логи запросов", Icon: IconList },
@@ -155,9 +153,12 @@ export default function App() {
             <Route path="/rule-sets" element={<RuleSets />} />
             <Route path="/rule-sets/:id" element={<RuleSetDetail />} />
             <Route path="/revisions" element={<Revisions />} />
-            <Route path="/devices" element={<Devices />} />
-            <Route path="/subscribers" element={<Subscribers me={me} />} />
-            <Route path="/instructions" element={<Instructions />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/subscription-page" element={<SubscriptionPage me={me} />} />
+            {/* старые адреса из закладок */}
+            <Route path="/devices" element={<Navigate to="/users" replace />} />
+            <Route path="/subscribers" element={<Navigate to="/users" replace />} />
+            <Route path="/instructions" element={<Navigate to="/subscription-page" replace />} />
             <Route path="/certificates" element={<Certificates />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/health" element={<Health />} />

@@ -5074,384 +5074,6 @@
     ]
    }
   },
-  "/device-profiles": {
-   "get": {
-    "tags": [
-     "Устройства"
-    ],
-    "summary": "Профили устройств",
-    "description": "Профили и текущие адреса резолвера.",
-    "responses": {
-     "200": {
-      "description": "Успех"
-     },
-     "400": {
-      "description": "Некорректный запрос",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "Не аутентифицирован",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "Недостаточно прав или не пройдена CSRF-проверка",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "Не найдено",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "Конфликт: объект используется или изменён другим клиентом",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "412": {
-      "description": "Версия объекта устарела (If-Match)",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "422": {
-      "description": "Конфигурация не компилируется",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     }
-    }
-   },
-   "post": {
-    "tags": [
-     "Устройства"
-    ],
-    "summary": "Создать профиль",
-    "description": "Для DoH-профилей создаётся уникальный токен пути; он показывается один раз.",
-    "responses": {
-     "201": {
-      "description": "Создано"
-     },
-     "400": {
-      "description": "Некорректный запрос",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "Не аутентифицирован",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "Недостаточно прав или не пройдена CSRF-проверка",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "Не найдено",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "Конфликт: объект используется или изменён другим клиентом",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "412": {
-      "description": "Версия объекта устарела (If-Match)",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "422": {
-      "description": "Конфигурация не компилируется",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     }
-    },
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/DeviceProfileRequest"
-       }
-      }
-     }
-    }
-   }
-  },
-  "/device-profiles/{id}": {
-   "delete": {
-    "tags": [
-     "Устройства"
-    ],
-    "summary": "Удалить профиль",
-    "description": "Токен перестанет приниматься после следующего выката ревизии.",
-    "responses": {
-     "200": {
-      "description": "Успех"
-     },
-     "400": {
-      "description": "Некорректный запрос",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "Не аутентифицирован",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "Недостаточно прав или не пройдена CSRF-проверка",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "Не найдено",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "Конфликт: объект используется или изменён другим клиентом",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "412": {
-      "description": "Версия объекта устарела (If-Match)",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "422": {
-      "description": "Конфигурация не компилируется",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     }
-    },
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string",
-       "format": "uuid"
-      }
-     }
-    ]
-   }
-  },
-  "/device-profiles/{id}/download": {
-   "get": {
-    "tags": [
-     "Устройства"
-    ],
-    "summary": "Скачать профиль",
-    "description": "Для Apple — .mobileconfig, для остальных платформ — инструкция в Markdown.",
-    "responses": {
-     "200": {
-      "description": "Файл профиля",
-      "content": {
-       "application/x-apple-aspen-config": {
-        "schema": {
-         "type": "string"
-        }
-       },
-       "text/markdown": {
-        "schema": {
-         "type": "string"
-        }
-       }
-      }
-     },
-     "400": {
-      "description": "Некорректный запрос",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "401": {
-      "description": "Не аутентифицирован",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "403": {
-      "description": "Недостаточно прав или не пройдена CSRF-проверка",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "404": {
-      "description": "Не найдено",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "409": {
-      "description": "Конфликт: объект используется или изменён другим клиентом",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "412": {
-      "description": "Версия объекта устарела (If-Match)",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     },
-     "422": {
-      "description": "Конфигурация не компилируется",
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/Error"
-        }
-       }
-      }
-     }
-    },
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string",
-       "format": "uuid"
-      }
-     }
-    ]
-   }
-  },
   "/settings": {
    "get": {
     "tags": [
@@ -5627,6 +5249,384 @@
       }
      }
     }
+   }
+  },
+  "/subscribers/{id}/devices": {
+   "get": {
+    "tags": [
+     "Пользователи"
+    ],
+    "summary": "Устройства пользователя",
+    "description": "Список устройств пользователя с личными адресами резолвера.",
+    "responses": {
+     "200": {
+      "description": "Успех"
+     },
+     "400": {
+      "description": "Некорректный запрос",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Не аутентифицирован",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Недостаточно прав или не пройдена CSRF-проверка",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Не найдено",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Конфликт: объект используется или изменён другим клиентом",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "412": {
+      "description": "Версия объекта устарела (If-Match)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Конфигурация не компилируется",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Пользователи"
+    ],
+    "summary": "Добавить устройство",
+    "description": "Создаёт устройство внутри пользователя и выдаёт ему персональный токен.",
+    "responses": {
+     "201": {
+      "description": "Создано"
+     },
+     "400": {
+      "description": "Некорректный запрос",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Не аутентифицирован",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Недостаточно прав или не пройдена CSRF-проверка",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Не найдено",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Конфликт: объект используется или изменён другим клиентом",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "412": {
+      "description": "Версия объекта устарела (If-Match)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Конфигурация не компилируется",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeviceProfileRequest"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/subscribers/{id}/devices/{device_id}": {
+   "delete": {
+    "tags": [
+     "Пользователи"
+    ],
+    "summary": "Удалить устройство",
+    "description": "Доступ отзывается на нодах в течение минуты, пересборка конфигурации не нужна.",
+    "responses": {
+     "200": {
+      "description": "Успех"
+     },
+     "400": {
+      "description": "Некорректный запрос",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Не аутентифицирован",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Недостаточно прав или не пройдена CSRF-проверка",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Не найдено",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Конфликт: объект используется или изменён другим клиентом",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "412": {
+      "description": "Версия объекта устарела (If-Match)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Конфигурация не компилируется",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
+   }
+  },
+  "/subscribers/{id}/devices/{device_id}/download": {
+   "get": {
+    "tags": [
+     "Пользователи"
+    ],
+    "summary": "Скачать настройку устройства",
+    "description": "Для Apple — .mobileconfig, для остальных платформ — инструкция в Markdown.",
+    "responses": {
+     "200": {
+      "description": "Файл профиля",
+      "content": {
+       "application/x-apple-aspen-config": {
+        "schema": {
+         "type": "string"
+        }
+       },
+       "text/markdown": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Некорректный запрос",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Не аутентифицирован",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Недостаточно прав или не пройдена CSRF-проверка",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Не найдено",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "Конфликт: объект используется или изменён другим клиентом",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "412": {
+      "description": "Версия объекта устарела (If-Match)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Конфигурация не компилируется",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ]
    }
   }
  },
