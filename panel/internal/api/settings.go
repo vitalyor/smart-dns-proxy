@@ -30,6 +30,10 @@ var defaultSettings = map[string]any{
 	// собирается ссылка {адрес}/{short_id} (ADR 0012).
 	"device_limit_default":  3,
 	"subscription_page_url": "",
+	// Оформление публичной страницы: имя над заголовком и контакт поддержки
+	// внизу. Меняются на лету — страница читает их из статуса подписчика.
+	"subscription_brand":   "",
+	"subscription_support": "",
 }
 
 // SeedSettings inserts missing defaults without touching existing values.
@@ -83,6 +87,7 @@ var settableKeys = map[string]bool{
 	"quic_policy": true, "backup_dir": true,
 	"log_level": true, "node_log_level": true,
 	"device_limit_default": true, "subscription_page_url": true,
+	"subscription_brand": true, "subscription_support": true,
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) error {

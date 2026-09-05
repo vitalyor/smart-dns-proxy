@@ -3,27 +3,12 @@ package api
 import (
 	"crypto/rand"
 	"encoding/base32"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"smartdns/panel/internal/auth"
 	"smartdns/panel/internal/store"
 )
-
-func (s *Server) listDeviceProfiles(w http.ResponseWriter, r *http.Request) error {
-	rows, err := store.Many[store.DeviceProfile](r.Context(), s.DB,
-		`SELECT id, name, type, config, revoked_at, version, created_at FROM device_profiles ORDER BY created_at DESC`)
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items":    rows,
-		"defaults": s.dnsEndpoints(r.Context()),
-	})
-	return nil
-}
 
 func (s *Server) dnsEndpoints(ctx contextT) map[string]any {
 	type row struct {
@@ -95,51 +80,6 @@ func (s *Server) buildDeviceConfig(ctx contextT, typ string) (map[string]any, st
 	return cfg, token, tokenHash
 }
 
-type deviceProfileRequest struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
-func (s *Server) createDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	var req deviceProfileRequest
-	if err := decodeJSON(r, &req); err != nil {
-		return err
-	}
-	if !contains(deviceTypes, req.Type) {
-		return badRequest("недопустимый тип профиля")
-	}
-	if strings.TrimSpace(req.Name) == "" {
-		return badRequest("укажите название профиля")
-	}
-	cfg, token, tokenHash := s.buildDeviceConfig(r.Context(), req.Type)
-	b, _ := json.Marshal(cfg)
-	p, err := store.One[store.DeviceProfile](r.Context(), s.DB, `
-		INSERT INTO device_profiles (name, type, config, token_hash) VALUES ($1,$2,$3,$4)
-		RETURNING id, name, type, config, revoked_at, version, created_at`,
-		req.Name, req.Type, b, tokenHash)
-	if err != nil {
-		return err
-	}
-	s.audit(r.Context(), r, "device_profile.created", "device_profile", p.ID, nil,
-		map[string]any{"name": req.Name, "type": req.Type})
-	writeJSON(w, http.StatusCreated, map[string]any{"profile": p, "token": token})
-	return nil
-}
-
-func (s *Server) deleteDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	n, err := s.DB.ExecN(r.Context(), `DELETE FROM device_profiles WHERE id=$1`, id)
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return notFound("profile")
-	}
-	s.audit(r.Context(), r, "device_profile.deleted", "device_profile", id, nil, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-	return nil
-}
-
 // renderDeviceArtifact produces the platform-specific setup file for a profile:
 // a .mobileconfig for Apple, Markdown instructions elsewhere. Shared by the
 // operator download and the subscription page, so both stay identical.
@@ -184,20 +124,6 @@ func deviceAddressesFull(p store.DeviceProfile) (dohURL, dotHost string, v4 []st
 		}
 	}
 	return dohURL, dotHost, v4
-}
-
-// downloadDeviceProfile renders the platform-specific setup artifact.
-func (s *Server) downloadDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	p, err := store.One[store.DeviceProfile](r.Context(), s.DB,
-		`SELECT * FROM device_profiles WHERE id=$1`, r.PathValue("id"))
-	if err != nil {
-		return err
-	}
-	ct, name, body := renderDeviceArtifact(p)
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
-	_, _ = w.Write(body)
-	return nil
 }
 
 func safeName(s string) string {

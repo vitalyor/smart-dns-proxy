@@ -220,3 +220,109 @@ func parseExpiry(v *string) (*time.Time, error) {
 	}
 	return &t, nil
 }
+
+// --- devices of a subscriber ------------------------------------------------
+//
+// Devices exist only inside a user: there is no standalone device list any more,
+// so every route below is scoped by the owner's id and a wrong id yields 404
+// rather than someone else's profile.
+
+func (s *Server) listSubscriberDevices(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sub, err := store.One[store.Subscriber](ctx, s.DB, `SELECT * FROM subscribers WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return notFound("subscriber")
+	}
+	devs, err := store.Many[store.DeviceProfile](ctx, s.DB,
+		`SELECT * FROM device_profiles WHERE subscriber_id=$1 ORDER BY created_at`, sub.ID)
+	if err != nil {
+		return err
+	}
+	out := make([]subDeviceView, 0, len(devs))
+	for _, d := range devs {
+		doh, dot, _ := deviceAddressesFull(d)
+		out = append(out, subDeviceView{ID: d.ID, Name: d.Name, Type: d.Type, CreatedAt: d.CreatedAt,
+			LastSeenAt: d.LastSeenAt, QueriesTotal: d.QueriesTotal, DoHURL: doh, DoTHost: dot})
+	}
+	limit := s.defaultDeviceLimit(ctx)
+	if sub.DeviceLimit != nil {
+		limit = *sub.DeviceLimit
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out, "device_limit": limit, "types": deviceTypes})
+	return nil
+}
+
+// addSubscriberDevice is the operator's own way in — for the person who does not
+// open the public page (starting with the operator's own phone).
+//
+// ponytail: no device-limit check here. The limit protects the public page from
+// a subscriber adding endlessly; an operator adding a device is a deliberate act
+// and the count is shown right next to the button.
+func (s *Server) addSubscriberDevice(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		return badRequest("укажите название устройства")
+	}
+	if !contains(deviceTypes, req.Type) {
+		return badRequest("недопустимый тип устройства")
+	}
+	ctx := r.Context()
+	subID := r.PathValue("id")
+	var exists bool
+	if err := s.DB.QueryRow(ctx, `SELECT true FROM subscribers WHERE id=$1`, subID).Scan(&exists); err != nil {
+		return notFound("subscriber")
+	}
+	cfg, _, tokenHash := s.buildDeviceConfig(ctx, req.Type)
+	b, _ := json.Marshal(cfg)
+	p, err := store.One[store.DeviceProfile](ctx, s.DB, `
+		INSERT INTO device_profiles (name, type, config, token_hash, subscriber_id)
+		VALUES ($1,$2,$3,$4,$5) RETURNING *`, req.Name, req.Type, b, tokenHash, subID)
+	if err != nil {
+		return err
+	}
+	doh, dot, _ := deviceAddressesFull(p)
+	s.audit(ctx, r, "subscriber.device.added", "device_profile", p.ID, nil,
+		map[string]any{"subscriber": subID, "type": req.Type})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"device": subDeviceView{ID: p.ID, Name: p.Name, Type: p.Type, CreatedAt: p.CreatedAt,
+			DoHURL: doh, DoTHost: dot},
+		"pending": true,
+	})
+	return nil
+}
+
+func (s *Server) deleteSubscriberDevice(w http.ResponseWriter, r *http.Request) error {
+	n, err := s.DB.ExecN(r.Context(), `DELETE FROM device_profiles WHERE id=$1 AND subscriber_id=$2`,
+		r.PathValue("device_id"), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return notFound("device")
+	}
+	s.audit(r.Context(), r, "subscriber.device.deleted", "device_profile", r.PathValue("device_id"), nil,
+		map[string]any{"subscriber": r.PathValue("id")})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	return nil
+}
+
+func (s *Server) downloadSubscriberDevice(w http.ResponseWriter, r *http.Request) error {
+	p, err := store.One[store.DeviceProfile](r.Context(), s.DB,
+		`SELECT * FROM device_profiles WHERE id=$1 AND subscriber_id=$2`,
+		r.PathValue("device_id"), r.PathValue("id"))
+	if err != nil {
+		return notFound("device")
+	}
+	ct, name, body := renderDeviceArtifact(p)
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	_, _ = w.Write(body)
+	return nil
+}

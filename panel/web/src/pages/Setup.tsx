@@ -18,7 +18,7 @@ export default function Setup() {
   const groupsIn = useAsync<{ items: unknown[] }>(() => api("/ingress-groups"), []);
   const groupsEg = useAsync<{ items: unknown[] }>(() => api("/egress-groups"), []);
   const dash = useAsync<Status>(() => api("/dashboard"), []);
-  const devices = useAsync<{ items: unknown[] }>(() => api("/device-profiles"), []);
+  const users = useAsync<{ items: unknown[] }>(() => api("/subscribers"), []);
 
   if (dash.error) return <ErrorState message={dash.error} onRetry={dash.reload} />;
   if (dash.loading || !dash.data) return <Spinner />;
@@ -62,10 +62,10 @@ export default function Setup() {
       to: "/revisions", cta: "Открыть конфигурации",
     },
     {
-      title: "Настроить устройство",
-      body: "Профиль для Android, Apple, Windows или роутера с инструкцией по проверке.",
-      done: (devices.data?.items.length ?? 0) > 0,
-      to: "/devices", cta: "Создать профиль",
+      title: "Завести пользователя",
+      body: "Человек получает личную ссылку и сам добавляет свои устройства: Android, Apple, Windows или роутер.",
+      done: (users.data?.items.length ?? 0) > 0,
+      to: "/users", cta: "Добавить пользователя",
     },
   ];
 
