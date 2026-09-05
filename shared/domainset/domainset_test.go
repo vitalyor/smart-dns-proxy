@@ -1,6 +1,9 @@
 package domainset
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestNormalizeHost(t *testing.T) {
 	cases := map[string]string{
@@ -104,5 +107,72 @@ func TestDiff(t *testing.T) {
 	add, rem := Diff(old, new)
 	if len(add) != 1 || add[0].Value != "c.com" || len(rem) != 1 || rem[0].Value != "a.com" {
 		t.Fatalf("diff wrong: %v %v", add, rem)
+	}
+}
+
+// Сценарий из обзора: «весь сервис через прокси, но этот поддомен — напрямую».
+// Раньше исключение молча не работало: удалять было нечего, а суффикс всё равно
+// забирал поддомен.
+func TestExcludeUnderIncludedSuffixActuallyExcludes(t *testing.T) {
+	includes := []Entry{{KindSuffix, "example.com"}, {KindExact, "api.example.com"}}
+	excludes := []Entry{{KindExact, "private.example.com"}}
+	merged := Merge(includes, excludes)
+
+	m := NewSet(merged).Compile()
+	if m.Match("private.example.com") {
+		t.Fatal("исключённый поддомен всё ещё попадает в набор")
+	}
+	if m.Specificity("private.example.com") != -1 {
+		t.Fatal("исключённый поддомен всё ещё выигрывает маршрут")
+	}
+	for _, h := range []string{"example.com", "api.example.com", "www.example.com"} {
+		if !m.Match(h) {
+			t.Fatalf("%s должен остаться в наборе", h)
+		}
+	}
+	// Исключение поддомена не должно утащить за собой соседей ниже него.
+	if !m.Match("other.example.com") {
+		t.Fatal("исключение задело чужой поддомен")
+	}
+}
+
+func TestExcludedSuffixSubtractsWholeBranch(t *testing.T) {
+	merged := Merge([]Entry{{KindSuffix, "example.com"}}, []Entry{{KindSuffix, "internal.example.com"}})
+	m := NewSet(merged).Compile()
+	if m.Match("internal.example.com") || m.Match("db.internal.example.com") {
+		t.Fatal("исключённая ветка должна вычитаться целиком")
+	}
+	if !m.Match("api.example.com") {
+		t.Fatal("остальное дерево должно остаться")
+	}
+}
+
+// Исключение, которому нечего вычитать, не должно засорять набор.
+func TestExcludeWithoutCoverageAddsNothing(t *testing.T) {
+	merged := Merge([]Entry{{KindExact, "a.example.com"}}, []Entry{{KindExact, "b.other.com"}})
+	for _, e := range merged {
+		if e.Kind.IsNegative() {
+			t.Fatalf("лишнее отрицательное правило %+v", e)
+		}
+	}
+	if len(merged) != 1 {
+		t.Fatalf("набор изменился: %+v", merged)
+	}
+}
+
+// Набор переживает сериализацию: ноды получают его JSON-ом в артефакте.
+func TestExceptSurvivesSetRoundTrip(t *testing.T) {
+	merged := Merge([]Entry{{KindSuffix, "example.com"}}, []Entry{{KindExact, "private.example.com"}})
+	b, err := json.Marshal(NewSet(merged))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Set
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	m := back.Compile()
+	if m.Match("private.example.com") || !m.Match("api.example.com") {
+		t.Fatalf("после сериализации набор ведёт себя иначе: %s", b)
 	}
 }

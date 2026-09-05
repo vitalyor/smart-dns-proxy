@@ -4,7 +4,17 @@ import { Card, ErrorState, Field, Notice, Spinner, errText, useAsync, useToast }
 import { IconShield, IconKey } from "../icons";
 
 type Cert = { domains: string[]; not_after: string; staging: boolean; updated_at: string; days_left: number };
-type Resp = { domains_needed: string[]; cloudflare_ready: boolean; certificate?: Cert };
+type NodeCert = { name: string; status: string; state: string; days_left: number };
+type Resp = { domains_needed: string[]; cloudflare_ready: boolean; certificate?: Cert; nodes?: NodeCert[] };
+
+function certState(s: string) {
+  switch (s) {
+    case "current": return <span className="badge ok">актуальный</span>;
+    case "stale": return <span className="badge warn">старый, будет дослан</span>;
+    case "no_certificate": return <span className="badge">панель ещё не выпускала</span>;
+    default: return <span className="badge">нода не сообщает</span>;
+  }
+}
 
 export default function Certificates() {
   const st = useAsync<Resp>(() => api("/certificates"), []);
@@ -92,6 +102,29 @@ export default function Certificates() {
           </button>
         </Card>
       </div>
+
+      <Card title="Что отдают ноды" eyebrow="не то, что лежит в базе, а то, что видит клиент">
+        {d.nodes?.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Нода</th><th style={{ width: 200 }}>Сертификат</th><th style={{ width: 120 }}>Осталось</th></tr></thead>
+              <tbody>
+                {d.nodes.map((n) => (
+                  <tr key={n.name}>
+                    <td>{n.name}</td>
+                    <td>{certState(n.state)}</td>
+                    <td className="num small dim">{n.days_left > 0 ? `${n.days_left} дн` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted small">Входных нод нет.</p>}
+        <p className="muted small" style={{ marginTop: 10 }}>
+          Отпечаток берётся у самого слушателя DoH/DoT. Если нода отдаёт не тот сертификат,
+          панель дошлёт его при ближайшем опросе — без нового обращения к Let’s Encrypt.
+        </p>
+      </Card>
 
       <Card title="Выпуск" eyebrow="и рассылка на ноды">
         <div className="grid g2">

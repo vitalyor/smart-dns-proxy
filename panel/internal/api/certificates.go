@@ -6,7 +6,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -16,6 +19,7 @@ import (
 	"smartdns/panel/internal/acmedns"
 	"smartdns/panel/internal/pusher"
 	"smartdns/panel/internal/store"
+	"smartdns/shared/tlsutil"
 )
 
 // The resolver certificate covers the bare hostname and the wildcard beneath it.
@@ -87,6 +91,7 @@ func (s *Server) certificatesStatus(w http.ResponseWriter, r *http.Request) erro
 			"updated_at": c.UpdatedAt, "days_left": int(time.Until(c.NotAfter).Hours() / 24),
 		}
 	}
+	out["nodes"] = s.nodeCertState(ctx)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }
@@ -237,6 +242,7 @@ func (s *Server) RenewCerts(ctx context.Context, every time.Duration) {
 	if s.Cfg.Pusher == nil {
 		return
 	}
+	s.renewOnce(ctx) // сразу при старте, а не через интервал
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -259,6 +265,11 @@ func (s *Server) renewOnce(ctx context.Context) {
 	if err != nil {
 		return // ещё не выпускали — обновлять нечего
 	}
+	// Предупреждаем до того, как продление станет срочным: продление живёт в
+	// панели, и если панель лежала, никто, кроме этого события, не скажет, что
+	// резолвер скоро перестанет отвечать по TLS — а это отключит DoH и DoT
+	// целиком, включая Android.
+	s.warnCertExpiry(ctx, int(time.Until(c.NotAfter).Hours()/24))
 	if time.Until(c.NotAfter) > 30*24*time.Hour {
 		return
 	}
@@ -279,3 +290,161 @@ var (
 	errNoResolverName = &APIError{Code: "no_resolver_name", Message: "Сначала задайте имя DoH/DoT в Настройках", status: http.StatusBadRequest}
 	errNoCFToken      = &APIError{Code: "no_cf_token", Message: "Сначала сохраните токен Cloudflare", status: http.StatusBadRequest}
 )
+
+// desiredResolverCert returns the fingerprint of the wildcard the fleet should
+// be serving, together with the material to deliver it.
+func (s *Server) desiredResolverCert(ctx contextT) (fp string, certPEM, keyPEM []byte) {
+	type row struct {
+		CertPEM string `db:"cert_pem"`
+		KeyPEM  string `db:"key_pem"`
+	}
+	c, err := store.One[row](ctx, s.DB,
+		`SELECT cert_pem, key_pem FROM certificates WHERE name=$1`, resolverCertName)
+	if err != nil || c.CertPEM == "" {
+		return "", nil, nil
+	}
+	leaf, err := parseLeafPEM([]byte(c.CertPEM))
+	if err != nil {
+		return "", nil, nil
+	}
+	return tlsutil.Fingerprint(leaf), []byte(c.CertPEM), []byte(c.KeyPEM)
+}
+
+// reconcileCert re-delivers the certificate to a node that is not serving it.
+//
+// Раньше сертификат уезжал ровно один раз, в момент выпуска: нода, лежавшая в
+// эту минуту, оставалась со старым до следующего продления — то есть могла
+// дожить до протухания. Теперь пропущенная доставка догоняется обычным опросом
+// и, что важно, без нового обращения к Let's Encrypt: материал уже есть в базе,
+// новый заказ только жёг бы недельный лимит.
+func (s *Server) reconcileCert(ctx contextT, t pusher.Target, haveFP, wantFP string, certPEM, keyPEM []byte) {
+	// Пустой отпечаток — это «нода не сказала» (старый агент, TLS ещё не поднят,
+	// перезапуск фронтенда), а не «отдаёт не тот». Досылать на это нельзя:
+	// получилась бы отправка на каждый опрос, то есть раз в десять секунд.
+	if wantFP == "" || haveFP == "" || haveFP == wantFP || len(certPEM) == 0 {
+		return
+	}
+	if !s.certPushDue(t.NodeID, wantFP) {
+		return
+	}
+	if err := s.Cfg.Pusher.PushCert(ctx, t, certPEM, keyPEM); err != nil {
+		slog.Warn("cannot catch up certificate", "node", t.Name, "err", err)
+		return
+	}
+	s.event(ctx, "info", "node", "cert_redelivered",
+		"Сертификат досылан на ноду "+t.Name+" (нода отдавала другой)", &t.NodeID, nil)
+	slog.Info("certificate re-delivered", "node", t.Name, "want", wantFP[:12])
+}
+
+// certPushDue throttles catch-up delivery to one attempt per node per five
+// minutes. Нода может подхватывать новый файл не мгновенно, и без этого
+// опрос раз в десять секунд успел бы отправить серт десяток раз и столько же
+// раз написать об этом в журнал.
+func (s *Server) certPushDue(nodeID, wantFP string) bool {
+	s.certPushMu.Lock()
+	defer s.certPushMu.Unlock()
+	if s.certPushed == nil {
+		s.certPushed = map[string]certPush{}
+	}
+	last, ok := s.certPushed[nodeID]
+	if ok && last.fp == wantFP && time.Since(last.at) < 5*time.Minute {
+		return false
+	}
+	s.certPushed[nodeID] = certPush{fp: wantFP, at: time.Now()}
+	return true
+}
+
+func parseLeafPEM(chain []byte) (*x509.Certificate, error) {
+	for {
+		var blk *pem.Block
+		blk, chain = pem.Decode(chain)
+		if blk == nil {
+			return nil, errors.New("сертификат не разбирается")
+		}
+		if blk.Type == "CERTIFICATE" {
+			return x509.ParseCertificate(blk.Bytes)
+		}
+	}
+}
+
+// nodeCertState reports, per ingress node, whether the certificate it actually
+// serves is the one the panel holds. Раньше страница показывала только срок в
+// базе — а живёт ли этот серт на ноде, приходилось выяснять с ноды.
+func (s *Server) nodeCertState(ctx contextT) []map[string]any {
+	wantFP, _, _ := s.desiredResolverCert(ctx)
+	type row struct {
+		Name   string `db:"name"`
+		Health []byte `db:"health"`
+		Status string `db:"status"`
+	}
+	rows, err := store.Many[row](ctx, s.DB, `
+		SELECT name, health, status FROM nodes
+		WHERE role='ingress' AND status <> 'disabled' ORDER BY name`)
+	if err != nil {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		var h struct {
+			FP        string `json:"resolver_cert_fp"`
+			DaysLeft  int    `json:"resolver_cert_days_left"`
+			AgentSeen string `json:"-"`
+		}
+		_ = json.Unmarshal(r.Health, &h)
+		state := "unknown"
+		switch {
+		case h.FP == "":
+			state = "unknown" // нода ещё не сообщила — старый агент или нет TLS
+		case wantFP == "":
+			state = "no_certificate"
+		case h.FP == wantFP:
+			state = "current"
+		default:
+			state = "stale"
+		}
+		out = append(out, map[string]any{
+			"name": r.Name, "status": r.Status, "state": state, "days_left": h.DaysLeft,
+		})
+	}
+	return out
+}
+
+// certWarnThresholds — рубежи, на которых панель напоминает о сроке. Не чаще
+// раза в сутки: событие должно оставаться заметным, а не превращаться в шум,
+// который перестают читать.
+var certWarnThresholds = []int{20, 10, 3, 1}
+
+// certWarnLevel reports whether a reminder is due and how loud it should be.
+func certWarnLevel(daysLeft int) (due bool, level string) {
+	hit := false
+	for _, t := range certWarnThresholds {
+		if daysLeft <= t {
+			hit = true
+		}
+	}
+	if !hit {
+		return false, ""
+	}
+	if daysLeft <= 3 {
+		return true, "error"
+	}
+	return true, "warn"
+}
+
+func (s *Server) warnCertExpiry(ctx contextT, daysLeft int) {
+	due, level := certWarnLevel(daysLeft)
+	if !due {
+		return
+	}
+	var recent bool
+	_ = s.DB.QueryRow(ctx, `SELECT true FROM events
+		WHERE code='cert_expiring' AND created_at > now() - interval '20 hours' LIMIT 1`).Scan(&recent)
+	if recent {
+		return
+	}
+	msg := fmt.Sprintf("Сертификат резолвера истекает через %d дн. Продление идёт из панели: если она недоступна, DoH и DoT перестанут работать.", daysLeft)
+	if daysLeft <= 0 {
+		msg = "Сертификат резолвера истёк: DoH и DoT больше не отвечают. Выпустите его заново на странице «Сертификат»."
+	}
+	s.event(ctx, level, "panel", "cert_expiring", msg, nil, map[string]any{"days_left": daysLeft})
+}

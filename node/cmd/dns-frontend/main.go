@@ -159,6 +159,18 @@ func main() {
 		lm := http.NewServeMux()
 		lm.HandleFunc("/log", srv.LogHandler())
 		lm.HandleFunc("/counters", srv.CountersHandler())
+		// Отпечаток именно загруженного сертификата, а не файла на диске:
+		// панель по нему видит, доехало ли продление до слушателя.
+		lm.HandleFunc("/certinfo", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			leaf, err := tlsutil.LeafInfo(tlsCfg)
+			if err != nil {
+				w.Write([]byte(`{"available":false}`))
+				return
+			}
+			w.Write([]byte(`{"available":true,"fingerprint":"` + tlsutil.Fingerprint(leaf) +
+				`","not_after":"` + leaf.NotAfter.UTC().Format(time.RFC3339) + `"}`))
+		})
 		go serveHTTP(&http.Server{Addr: *logAddr, Handler: lm, ReadHeaderTimeout: 5 * time.Second}, false, "query-log")
 	}
 

@@ -94,7 +94,13 @@ type Health struct {
 	RejectRate      float64 `json:"reject_rate"`
 	UpstreamOK      bool    `json:"upstream_ok"`
 	EgressReachable bool    `json:"egress_reachable"`
-	CertDaysLeft    int     `json:"cert_days_left"`
+	// CertDaysLeft — управляющий сертификат ноды (mTLS с панелью), не публичный.
+	CertDaysLeft int `json:"cert_days_left"`
+	// ResolverCertFP и ResolverCertDaysLeft — про сертификат, который нода
+	// реально отдаёт клиентам на DoH/DoT. Панель по отпечатку понимает, доехало
+	// ли продление, и досылает его без нового обращения к Let's Encrypt.
+	ResolverCertFP       string `json:"resolver_cert_fp,omitempty"`
+	ResolverCertDaysLeft int    `json:"resolver_cert_days_left,omitempty"`
 
 	// AccessHash is the digest of the DoH token set the node currently holds.
 	// The panel compares it with its own on every poll and re-pushes on drift,
