@@ -86,6 +86,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /{short}/api/devices/{id}/config", s.deviceConfig)
 	mux.HandleFunc("GET /{short}/api/devices/{id}/instructions", s.deviceInstructions)
 	mux.HandleFunc("GET /{short}/api/assets/{id}", s.asset)
+	mux.HandleFunc("GET /fonts/{name}", s.font)
 	mux.HandleFunc("GET /{short}", s.page)
 	mux.HandleFunc("GET /", s.root)
 	return s.middleware(mux)
@@ -106,7 +107,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Content-Security-Policy",
-			"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'")
+			"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'none'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

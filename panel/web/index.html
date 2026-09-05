@@ -1,11 +1,16 @@
 <!doctype html>
-<html lang="ru" data-theme="dark">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
+    <!-- Латиница нужна с первого кадра: без предзагрузки первый экран успевает
+         отрисоваться системным шрифтом и дёрнуться. -->
+    <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
+    <script src="/theme.js"></script>
     <title>SmartDNS — панель управления</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230F1420'/><path d='M6 16h7m6 0h7' stroke='%234FD1C5' stroke-width='2.5' stroke-linecap='round'/><circle cx='16' cy='16' r='3.5' fill='%23F2A33C'/></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2310151F'/><path d='M6 16h7m6 0h7' stroke='%233FD9C4' stroke-width='2.5' stroke-linecap='round'/><circle cx='16' cy='16' r='3.5' fill='%23F5A742'/></svg>" />
   </head>
   <body>
     <div id="root"></div>

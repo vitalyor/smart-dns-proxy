@@ -21,8 +21,18 @@ import Setup from "./pages/Setup";
 import {
   IconGauge, IconServer, IconArrowIn, IconGrid, IconList, IconGlobe,
   IconLayers, IconPhone, IconPulse, IconShield, IconSliders, IconLogout,
-  IconMoon, IconSun, IconPlay,
+  IconMoon, IconSun, IconPlay, IconMenu, IconDesktop,
 } from "./icons";
+
+// Тема: три состояния, а не два. «Системная» — значение по умолчанию, потому
+// что человек уже выбрал светлое или тёмное на уровне ОС, и панель не должна
+// спорить с этим выбором.
+type Theme = "system" | "light" | "dark";
+const THEMES: { key: Theme; label: string; Icon: (p: { size?: number }) => JSX.Element }[] = [
+  { key: "system", label: "Как в системе", Icon: IconDesktop },
+  { key: "light", label: "Светлая", Icon: IconSun },
+  { key: "dark", label: "Тёмная", Icon: IconMoon },
+];
 
 export type Me = {
   user: { id: string; email: string; role: string; display_name: string; totp_enabled: boolean };
@@ -55,14 +65,22 @@ const NAV = [
 export default function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [ready, setReady] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("sdns-theme") ?? "dark");
+  const [theme, setTheme] = useState<Theme>(
+    () => (localStorage.getItem("sdns-theme") as Theme) || "system");
+  const [navOpen, setNavOpen] = useState(false);
   const toast = useToast();
   const loc = useLocation();
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    // Системную тему выражаем отсутствием атрибута: дальше решает CSS по
+    // prefers-color-scheme, без слушателей и перерисовок.
+    if (theme === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
     localStorage.setItem("sdns-theme", theme);
   }, [theme]);
+
+  // Переход по ссылке на телефоне обязан закрывать выехавшую навигацию.
+  useEffect(() => { setNavOpen(false); }, [loc.pathname]);
 
   const load = useCallback(async () => {
     try {
@@ -88,7 +106,8 @@ export default function App() {
   };
 
   return (
-    <div className="shell">
+    <div className={`shell${navOpen ? " nav-open" : ""}`}>
+      <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <nav className="rail" aria-label="Основная навигация">
         <div className="brand">
           <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -119,19 +138,26 @@ export default function App() {
         <div className="rail-foot">
           <div className="small" style={{ fontWeight: 550 }}>{me.user.email}</div>
           <div className="tiny dim" style={{ marginBottom: 10 }}>роль: {me.user.role} · v{me.version}</div>
-          <div className="row" style={{ gap: 6 }}>
-            <button className="btn sm ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              aria-label={theme === "dark" ? "Светлая тема" : "Тёмная тема"}>
-              {theme === "dark" ? <IconSun /> : <IconMoon />}
-              {theme === "dark" ? "Светлая" : "Тёмная"}
-            </button>
-            <button className="btn sm ghost" onClick={signOut}><IconLogout />Выйти</button>
+          <div className="seg wide tone-neutral" role="group" aria-label="Тема оформления"
+            style={{ marginBottom: 8 }}>
+            {THEMES.map((t) => (
+              <button key={t.key} className={`seg-btn${theme === t.key ? " sel" : ""}`}
+                onClick={() => setTheme(t.key)} title={t.label} aria-label={t.label}
+                aria-pressed={theme === t.key}>
+                <t.Icon />
+              </button>
+            ))}
           </div>
+          <button className="btn sm ghost" style={{ width: "100%" }} onClick={signOut}>
+            <IconLogout />Выйти
+          </button>
         </div>
       </nav>
 
       <main className="main">
         <header className="topbar">
+          <button className="btn ghost icon nav-toggle" onClick={() => setNavOpen(true)}
+            aria-label="Открыть навигацию" aria-expanded={navOpen}><IconMenu /></button>
           <div className="eyebrow">{titleOf(loc.pathname)}</div>
           <div className="spacer" />
           {me.lab_mode && (
