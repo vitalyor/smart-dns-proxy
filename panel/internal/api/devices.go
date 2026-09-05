@@ -2,7 +2,7 @@ package api
 
 import (
 	"crypto/rand"
-	"encoding/hex"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -52,17 +52,23 @@ func (s *Server) dnsEndpoints(ctx contextT) map[string]any {
 	}
 }
 
-// newDeviceToken returns a token safe as both a DoH path segment and a DNS label
-// (Android's DoT carries it as the SNI label <token>.<host>). Lowercase hex is
-// LDH-valid and case-stable, so the DoH path (hashed as-is) and the DoT SNI
-// (lowercased before hashing) yield the same hash. base64url would not: its
-// "_" is illegal in a hostname and TLS verification rejects it.
+// newDeviceToken returns a short token safe as both a DoH path segment and a DNS
+// label (Android's DoT carries it as the SNI label <token>.<host>). Lowercase
+// base32 keeps it to 8 characters at 40 bits — much stronger than 8 hex chars —
+// while staying LDH-valid and case-stable, so the DoH path (hashed as-is) and
+// the DoT SNI (lowercased before hashing) yield the same hash. Its alphabet
+// (a-z2-7) also drops the look-alike 0/1/8/9, so the address is easy to read
+// aloud. base64url would not do: its "_" is illegal in a hostname.
+//
+// ponytail: 40 bits leans on the resolver's rate limiter, not the token alone;
+// a guessed token only grants resolver use (and burns that user's quota), never
+// account access. Bump the byte count here if that tradeoff ever feels thin.
 func newDeviceToken() string {
-	b := make([]byte, 16)
+	b := make([]byte, 5) // 40 bits -> exactly 8 base32 chars, no padding
 	if _, err := rand.Read(b); err != nil {
 		panic("crypto/rand unavailable: " + err.Error())
 	}
-	return hex.EncodeToString(b)
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
 }
 
 // deviceTypes are the platforms a profile can target.
