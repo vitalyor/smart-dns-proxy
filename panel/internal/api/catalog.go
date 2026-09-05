@@ -169,8 +169,8 @@ func (s *Server) serviceWizard(w http.ResponseWriter, r *http.Request) error {
 		ports = []int32{443}
 	}
 	udp := orDefault(req.UDPMode, "disabled_fallback")
-	if !contains([]string{"disabled_fallback", "proxy", "separate_ip"}, udp) {
-		return fail(badRequest("недопустимый режим UDP"))
+	if err := checkUDPMode(&udp); err != nil {
+		return fail(err)
 	}
 	probe := map[string]any{}
 	if h := strings.TrimSpace(req.ProbeHost); h != "" {

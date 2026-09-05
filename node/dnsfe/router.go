@@ -73,6 +73,17 @@ func (r *Router) SetTokens(tokens []string) {
 	r.mu.Unlock()
 }
 
+// KnownToken reports whether the hash belongs to the live set. Used to keep the
+// per-token tallies bounded: only tokens the panel issued are ever counted.
+func (r *Router) KnownToken(t string) bool {
+	if t == "" {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.tokens[strings.ToLower(t)]
+}
+
 // TokensHash reports the digest of the current set so the node can tell the
 // panel what it holds and the two can converge.
 func (r *Router) TokensHash() string {

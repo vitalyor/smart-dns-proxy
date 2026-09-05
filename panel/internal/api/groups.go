@@ -16,8 +16,11 @@ type groupKind struct {
 	label       string
 }
 
+// Точка входа принимает только active_active: primary_fallback и weighted
+// хранятся схемой, но компилятор их не читает — устройство выбирает адрес само
+// из набора A-записей. Пока за режимом нет поведения, API его не принимает.
 var ingressKind = groupKind{"ingress_groups", "ingress_group_members", "ingress",
-	[]string{"active_active", "primary_fallback", "weighted"}, "точка входа"}
+	[]string{"active_active"}, "точка входа"}
 var egressKind = groupKind{"egress_groups", "egress_group_members", "egress",
 	[]string{"primary_fallback", "weighted", "lowest_latency", "manual_fixed"}, "точка выхода"}
 

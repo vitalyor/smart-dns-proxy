@@ -70,7 +70,7 @@ func main() {
 	// up here, and a configuration rollout never touches it.
 	accessCtx, stopAccess := context.WithCancel(context.Background())
 	defer stopAccess()
-	dnsfe.WatchAccess(accessCtx, *accessPath, 2*time.Second, router.SetTokens)
+	dnsfe.WatchAccess(accessCtx, *accessPath, 2*time.Second, srv.ApplyTokens)
 
 	slog.Info("dns-frontend starting",
 		"version", version, "revision", cfg.RevisionID, "services", len(cfg.Services),

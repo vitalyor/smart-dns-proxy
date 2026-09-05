@@ -113,6 +113,13 @@ func (h dnsHandler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 }
 
+// ApplyTokens swaps the accepted token set and drops tallies for tokens that
+// left it, so the access set is the single source of truth for both.
+func (s *Server) ApplyTokens(tokens []string) {
+	s.Router.SetTokens(tokens)
+	s.counts.retain(tokens)
+}
+
 // Handle produces the response for one query. Exported for tests.
 func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string) (resp *dns.Msg) {
 	start := time.Now()
@@ -126,7 +133,11 @@ func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string)
 		if resp != nil {
 			rcode = dns.RcodeToString[resp.Rcode]
 		}
-		s.counts.hit(dohToken, start)
+		// Только обслуженные запросы и только выданные токены: отказ не должен
+		// тратить чужую квоту, а неизвестный токен — заводить строку в учёте.
+		if !strings.HasPrefix(decision, "denied:") && decision != "malformed" && s.Router.KnownToken(dohToken) {
+			s.counts.hit(dohToken, start)
+		}
 		s.log.add(LogEntry{
 			TS: start.UnixMilli(), Client: client.String(), Proto: proto, Name: qname, Type: qtype,
 			Decision: decision, Rcode: rcode, MS: took.Milliseconds(),
