@@ -221,6 +221,21 @@ func (c *Client) FetchDNSLog(ctx context.Context, t Target, after uint64) ([]byt
 	return raw, nil
 }
 
+// PushCert installs a certificate the panel obtained itself. One wildcard serves
+// the whole fleet, so this replaces per-node HTTP-01 issuance — and the zone
+// token that DNS-01 needs never leaves the panel (ADR 0012).
+func (c *Client) PushCert(ctx context.Context, t Target, certPEM, keyPEM []byte) error {
+	body, _ := json.Marshal(map[string]string{"cert_pem": string(certPEM), "key_pem": string(keyPEM)})
+	raw, code, err := c.doTimeout(ctx, t, http.MethodPost, "/v1/cert/install", body, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	if code != http.StatusOK {
+		return fmt.Errorf("node rejected certificate (HTTP %d): %s", code, string(raw))
+	}
+	return nil
+}
+
 // FetchCounters returns the node's per-device tallies (raw JSON).
 func (c *Client) FetchCounters(ctx context.Context, t Target) ([]byte, error) {
 	raw, code, err := c.doTimeout(ctx, t, http.MethodGet, "/v1/dns/counters", nil, 8*time.Second)

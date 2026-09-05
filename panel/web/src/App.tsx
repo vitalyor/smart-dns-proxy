@@ -13,6 +13,7 @@ import Revisions from "./pages/Revisions";
 import Devices from "./pages/Devices";
 import Subscribers from "./pages/Subscribers";
 import Instructions from "./pages/Instructions";
+import Certificates from "./pages/Certificates";
 import Health from "./pages/Health";
 import Logs from "./pages/Logs";
 import Audit from "./pages/Audit";
@@ -45,6 +46,7 @@ const NAV = [
   { to: "/devices", label: "Устройства", Icon: IconPhone },
   { to: "/subscribers", label: "Подписчики", Icon: IconGlobe },
   { to: "/instructions", label: "Инструкции", Icon: IconLayers },
+  { to: "/certificates", label: "Сертификат", Icon: IconShield },
   { group: "Наблюдение" },
   { to: "/logs", label: "Логи запросов", Icon: IconList },
   { to: "/health", label: "Здоровье и события", Icon: IconPulse },
@@ -156,6 +158,7 @@ export default function App() {
             <Route path="/devices" element={<Devices />} />
             <Route path="/subscribers" element={<Subscribers me={me} />} />
             <Route path="/instructions" element={<Instructions />} />
+            <Route path="/certificates" element={<Certificates />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/health" element={<Health />} />
             <Route path="/audit" element={<Audit />} />
