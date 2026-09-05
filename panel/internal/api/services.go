@@ -64,6 +64,19 @@ type serviceRequest struct {
 	Probe          map[string]any `json:"probe"`
 }
 
+// checkUDPMode accepts only what the data plane actually implements. proxy и
+// separate_ip остались в схеме от задуманного UDP-прокси, которого в нодах нет:
+// принимать их значило бы обещать поведение, которого не будет.
+func checkUDPMode(m *string) error {
+	if m == nil || *m == "" {
+		return nil
+	}
+	if *m != "disabled_fallback" {
+		return badRequest("режим UDP %q пока не поддерживается нодами: доступен только disabled_fallback", *m)
+	}
+	return nil
+}
+
 func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	var req serviceRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -94,8 +107,8 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	if req.UDPMode == "" {
 		req.UDPMode = "disabled_fallback"
 	}
-	if !contains([]string{"disabled_fallback", "proxy", "separate_ip"}, req.UDPMode) {
-		return badRequest("недопустимый режим UDP")
+	if err := checkUDPMode(&req.UDPMode); err != nil {
+		return err
 	}
 	if req.Probe == nil {
 		req.Probe = map[string]any{}
@@ -138,6 +151,9 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.DNSTTL != nil && (*req.DNSTTL < 30 || *req.DNSTTL > 300) {
 		return badRequest("TTL должен быть в диапазоне 30–300 секунд")
+	}
+	if err := checkUDPMode(req.UDPMode); err != nil {
+		return err
 	}
 	ver, err := ifMatch(r)
 	if err != nil {

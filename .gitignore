@@ -18,3 +18,4 @@ panel/web/dist/
 # Диагностические пробники доступности — не часть продукта.
 .blackbox/
 TODO.md
+graphify-out/

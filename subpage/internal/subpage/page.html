@@ -109,6 +109,8 @@
   var base = location.pathname.replace(/\/+$/, "");
   var $ = function(id){ return document.getElementById(id); };
   var state = null;
+  var lastSig = null;      // состав списка устройств на экране
+  var openHowto = {};      // какие инструкции сейчас раскрыты
 
   function api(path, opts){
     return fetch(base + path, opts).then(function(r){
@@ -132,6 +134,11 @@
     return Math.round(d/86400) + " дн назад";
   }
 
+  function meta(d){
+    return platform(d.type) + ' · ' + when(d.last_seen_at)
+      + (d.queries_total ? ' · ' + d.queries_total.toLocaleString("ru-RU") + ' запросов' : '');
+  }
+
   function render(){
     var s = state;
     $("title").textContent = s.name || "Мои устройства";
@@ -152,27 +159,43 @@
       ? "Достигнут лимит — удалите ненужное" : "";
     $("add").disabled = devs.length >= s.device_limit;
 
-    $("devices").innerHTML = devs.length ? devs.map(function(d){
-      return '<div class="dev">'
-        + '<div style="flex:1;min-width:0">'
-        +   '<div class="dev-name">' + esc(d.name) + '</div>'
-        +   '<div class="dev-meta">' + platform(d.type) + ' · ' + when(d.last_seen_at)
-        +     (d.queries_total ? ' · ' + d.queries_total.toLocaleString("ru-RU") + ' запросов' : '')
-        +   '</div>'
-        + '</div>'
-        + '<a class="btn" href="' + base + '/api/devices/' + d.id + '/config">Скачать</a>'
-        + '<button class="btn" data-how="' + d.id + '">Как настроить</button>'
-        + '<button class="btn danger" data-del="' + d.id + '">Удалить</button>'
-        + '</div>'
-        + '<div class="howto" id="howto-' + d.id + '" hidden></div>';
-    }).join("") : '<p class="muted" style="margin:6px 0 0">Пока ни одного. Добавьте первое ниже.</p>';
+    // Список перерисовывается только когда меняется его состав. Иначе таймер
+    // раз в 30 секунд закрывал бы раскрытую инструкцию прямо во время чтения;
+    // меняющиеся цифры обновляются на месте.
+    var sig = devs.map(function(d){ return d.id + ":" + d.name + ":" + d.type; }).join("|");
+    if(sig !== lastSig){
+      lastSig = sig;
+      $("devices").innerHTML = devs.length ? devs.map(function(d){
+        return '<div class="dev">'
+          + '<div style="flex:1;min-width:0">'
+          +   '<div class="dev-name">' + esc(d.name) + '</div>'
+          +   '<div class="dev-meta" id="meta-' + d.id + '">' + meta(d) + '</div>'
+          + '</div>'
+          + '<a class="btn" href="' + base + '/api/devices/' + d.id + '/config">Скачать</a>'
+          + '<button class="btn" data-how="' + d.id + '">Как настроить</button>'
+          + '<button class="btn danger" data-del="' + d.id + '">Удалить</button>'
+          + '</div>'
+          + '<div class="howto" id="howto-' + d.id + '" hidden></div>'
+          + '<div id="err-' + d.id + '"></div>';
+      }).join("") : '<p class="muted" style="margin:6px 0 0">Пока ни одного. Добавьте первое ниже.</p>';
 
-    Array.prototype.forEach.call(document.querySelectorAll("[data-del]"), function(b){
-      b.onclick = function(){ removeDevice(b.getAttribute("data-del"), b); };
-    });
-    Array.prototype.forEach.call(document.querySelectorAll("[data-how]"), function(b){
-      b.onclick = function(){ toggleHowto(b.getAttribute("data-how"), b); };
-    });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-del]"), function(b){
+        b.onclick = function(){ removeDevice(b.getAttribute("data-del"), b); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-how]"), function(b){
+        b.onclick = function(){ toggleHowto(b.getAttribute("data-how"), b); };
+      });
+      // Раскрытые инструкции переживают перерисовку состава.
+      Object.keys(openHowto).forEach(function(id){
+        var btn = document.querySelector('[data-how="' + id + '"]');
+        if(btn && openHowto[id]){ openHowto[id] = false; toggleHowto(id, btn); }
+      });
+    } else {
+      devs.forEach(function(d){
+        var el = $("meta-" + d.id);
+        if(el) el.innerHTML = meta(d);
+      });
+    }
     $("devices-card").hidden = false;
     $("add-card").hidden = false;
   }
@@ -233,9 +256,10 @@
   var howtoCache = {};
   function toggleHowto(id, btn){
     var box = $("howto-" + id);
-    if(!box.hidden){ box.hidden = true; btn.textContent = "Как настроить"; return; }
+    if(!box.hidden){ box.hidden = true; openHowto[id] = false; btn.textContent = "Как настроить"; return; }
     btn.textContent = "Скрыть";
     box.hidden = false;
+    openHowto[id] = true;
     var key = id + ":" + (state && state.instructions_version || "");
     if(howtoCache[key]){ box.innerHTML = howtoCache[key]; return; }
     box.innerHTML = '<p class="muted">Загружаем…</p>';
@@ -249,8 +273,22 @@
   function removeDevice(id, btn){
     if(!confirm("Удалить устройство? Оно перестанет работать.")) return;
     btn.disabled = true;
-    api("/api/devices/" + id, { method: "DELETE" }).then(function(){ load(); })
-      .catch(function(){ btn.disabled = false; });
+    var err = $("err-" + id);
+    if(err) err.innerHTML = "";
+    api("/api/devices/" + id, { method: "DELETE" }).then(function(r){
+      // Молча пропущенная ошибка выглядела как успешное удаление: устройство
+      // «исчезало» до следующего обновления и возвращалось обратно.
+      if(!r.ok){
+        btn.disabled = false;
+        if(err) err.innerHTML = '<div class="alert bad">' + esc(r.body.message || r.body.error || "Не удалось удалить устройство.") + '</div>';
+        return;
+      }
+      openHowto[id] = false;
+      load();
+    }).catch(function(){
+      btn.disabled = false;
+      if(err) err.innerHTML = '<div class="alert bad">Нет связи с сервером.</div>';
+    });
   }
 
   load();

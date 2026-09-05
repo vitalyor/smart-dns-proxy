@@ -14,9 +14,11 @@ services:
     restart: unless-stopped
     environment:
       # Адрес панели. В проде — публичный, на этапе разработки можно соседний контейнер.
-      PANEL_URL: ${PANEL_URL:?PANEL_URL is required}
-      # Ключ со scope из панели: Подписчики → Ключи доступа.
-      PANEL_API_KEY: ${PANEL_API_KEY:?PANEL_API_KEY is required}
+      # Пусто — контейнер сразу падает с понятной ошибкой (проверка в бинарнике),
+      # зато `docker compose build` не требует секретов.
+      PANEL_URL: ${PANEL_URL:-}
+      # Ключ со scope из панели: Страница подписки → Ключи доступа.
+      PANEL_API_KEY: ${PANEL_API_KEY:-}
       APP_ADDR: ":8080"
       TZ: ${TZ:-Europe/Moscow}
     ports:
