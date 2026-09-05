@@ -87,7 +87,7 @@ func (s *Server) serviceWizard(w http.ResponseWriter, r *http.Request) error {
 		slug = slugify(req.Name)
 	}
 	if !slugRe.MatchString(slug) {
-		return badRequest("slug должен состоять из строчных латинских букв, цифр и дефисов")
+		return badRequest("Идентификатор строится из названия и может содержать только латиницу, цифры и дефисы — задайте название латиницей")
 	}
 	manual := cleanLines(req.Domains)
 	hasRemote := req.Preset != "" || req.Repo != "" || req.URL != ""
@@ -169,8 +169,8 @@ func (s *Server) serviceWizard(w http.ResponseWriter, r *http.Request) error {
 		ports = []int32{443}
 	}
 	udp := orDefault(req.UDPMode, "disabled_fallback")
-	if !contains([]string{"disabled_fallback", "proxy", "separate_ip"}, udp) {
-		return fail(badRequest("недопустимый режим UDP"))
+	if err := checkUDPMode(&udp); err != nil {
+		return fail(err)
 	}
 	probe := map[string]any{}
 	if h := strings.TrimSpace(req.ProbeHost); h != "" {

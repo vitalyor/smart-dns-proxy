@@ -88,12 +88,14 @@ type Service struct {
 
 // DNSAccess describes how the DNS frontend authenticates clients.
 type DNSAccess struct {
-	Mode           string   `json:"mode"` // allowlist|doh-token|mtls|restricted-public-dot
-	AllowedCIDRs   []string `json:"allowed_cidrs"`
-	DoHPathTokens  []string `json:"doh_path_tokens"` // sha256 hex of the URL path token
-	RateLimitQPS   int      `json:"rate_limit_qps"`
-	RateLimitBurst int      `json:"rate_limit_burst"`
-	MaxConcurrent  int      `json:"max_concurrent"`
+	Mode         string   `json:"mode"` // allowlist|doh-token|mtls|restricted-public-dot
+	AllowedCIDRs []string `json:"allowed_cidrs"`
+	// DoH path tokens deliberately do NOT live here. Access changes far more
+	// often than configuration — a subscriber adding a device must not trigger a
+	// config rollout — so the token set travels on its own channel (ADR 0012).
+	RateLimitQPS   int `json:"rate_limit_qps"`
+	RateLimitBurst int `json:"rate_limit_burst"`
+	MaxConcurrent  int `json:"max_concurrent"`
 }
 
 // DNSConfig is the ingress DNS frontend section.

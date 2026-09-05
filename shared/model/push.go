@@ -3,10 +3,14 @@ package model
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 )
 
 // Bundle is what the panel mints when an operator creates a node and what the
@@ -90,9 +94,41 @@ type Health struct {
 	RejectRate      float64 `json:"reject_rate"`
 	UpstreamOK      bool    `json:"upstream_ok"`
 	EgressReachable bool    `json:"egress_reachable"`
-	CertDaysLeft    int     `json:"cert_days_left"`
+	// CertDaysLeft — управляющий сертификат ноды (mTLS с панелью), не публичный.
+	CertDaysLeft int `json:"cert_days_left"`
+	// ResolverCertFP и ResolverCertDaysLeft — про сертификат, который нода
+	// реально отдаёт клиентам на DoH/DoT. Панель по отпечатку понимает, доехало
+	// ли продление, и досылает его без нового обращения к Let's Encrypt.
+	ResolverCertFP       string `json:"resolver_cert_fp,omitempty"`
+	ResolverCertDaysLeft int    `json:"resolver_cert_days_left,omitempty"`
+
+	// AccessHash is the digest of the DoH token set the node currently holds.
+	// The panel compares it with its own on every poll and re-pushes on drift,
+	// so the two converge without a separate tracking mechanism.
+	AccessHash string `json:"access_hash,omitempty"`
 
 	// Egress-plane signals.
 	AllowlistDenials int64 `json:"allowlist_denials"`
 	ResolveErrors    int64 `json:"resolve_errors"`
+}
+
+// AccessSet is the complete set of DoH path tokens (sha256 hex of the URL path
+// segment) a node should accept. The panel always sends the full set rather than
+// a delta: the operation is then idempotent and self-healing.
+type AccessSet struct {
+	Tokens []string `json:"tokens"`
+}
+
+// AccessHash digests a token set order-independently, so panel and node agree on
+// "same set" regardless of how either assembled it.
+func AccessHash(tokens []string) string {
+	norm := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			norm = append(norm, t)
+		}
+	}
+	sort.Strings(norm)
+	sum := sha256.Sum256([]byte(strings.Join(norm, "\n")))
+	return hex.EncodeToString(sum[:])
 }

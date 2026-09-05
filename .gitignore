@@ -15,3 +15,7 @@ panel/web/dist/
 # Локальные артефакты сборки и рабочие документы (содержат реальные IP).
 *.tsbuildinfo
 /LAUNCH-PLAN.html
+# Диагностические пробники доступности — не часть продукта.
+.blackbox/
+TODO.md
+graphify-out/

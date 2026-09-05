@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { api, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
-import { IconPlus, IconTrash } from "../icons";
+import { IconPlus, IconRefresh, IconTrash } from "../icons";
 
 type Service = {
   id: string; name: string; slug: string; enabled: boolean; priority: number;
@@ -11,6 +10,7 @@ type Service = {
   rule_set_name: string | null; ingress_group_name: string | null; egress_group_name: string | null;
   rule_count: number | null; rule_set_hash: string | null;
   probe: Record<string, unknown>; probe_in_set: boolean; version: number;
+  domains: string[];
 };
 type Named = { id: string; name: string };
 type CatalogItem = { slug: string; name: string; preset: string; probe_host: string; domains: number };
@@ -114,7 +114,6 @@ export default function Services() {
       {editing && (
         <ServiceForm
           service={editing}
-          ruleSets={rules.data?.items ?? []}
           ingress={ingress} egress={egress}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); list.reload(); }}
@@ -252,9 +251,18 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
             </div>
           </Field>
           {mode === "manual" && (
-            <Field label="Домены" hint="По одному в строке. Можно с префиксом domain:, full: или regexp:.">
-              <textarea className="input mono" rows={8} value={domains} placeholder={"gemini.google.com\naistudio.google.com"}
+            <Field label="Домены" hint="По одному в строке. Домен покрывает и все поддомены (openai.com → и api.openai.com). Только точный хост — full:host. Можно загрузить файл.">
+              <textarea className="textarea mono" rows={8} value={domains} placeholder={"gemini.google.com\naistudio.google.com"}
                 onChange={(e) => setDomains(e.target.value)} />
+              <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
+                Загрузить файл
+                <input type="file" accept=".txt,.list,text/plain" style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) { const r = new FileReader(); r.onload = () => setDomains((d) => (d.trim() ? d.replace(/\s*$/, "") + "\n" : "") + String(r.result ?? "").trim()); r.readAsText(f); }
+                    e.target.value = "";
+                  }} />
+              </label>
             </Field>
           )}
           {mode === "catalog" && (
@@ -373,12 +381,12 @@ function Steps({ step, labels }: { step: number; labels: string[] }) {
 // Edit existing service (unchanged behaviour): direct field editing.
 // ---------------------------------------------------------------------------
 
-function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
-  service: Service; ruleSets: Named[]; ingress: Named[]; egress: Named[];
+function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
+  service: Service; ingress: Named[]; egress: Named[];
   onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName] = useState(service.name);
-  const [ruleSetId, setRuleSetId] = useState(service.rule_set_id ?? "");
+  const [domains, setDomains] = useState((service.domains ?? []).join("\n"));
   const [ingressId, setIngressId] = useState(service.ingress_group_id ?? "");
   const [egressId, setEgressId] = useState(service.egress_group_id ?? "");
   const [ttl, setTtl] = useState(service.dns_ttl);
@@ -389,12 +397,18 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
   const [enabled, setEnabled] = useState(service.enabled);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"domains" | "route" | "params">("domains");
+
+  const addFile = (f: File) => {
+    const r = new FileReader();
+    r.onload = () => setDomains((d) => (d.trim() ? d.replace(/\s*$/, "") + "\n" : "") + String(r.result ?? "").trim());
+    r.readAsText(f);
+  };
 
   const save = async () => {
     setBusy(true); setError("");
     const body: Record<string, unknown> = {
       name, description: "", enabled,
-      rule_set_id: ruleSetId || null,
       ingress_group_id: ingressId || null,
       egress_group_id: egressId || null,
       allowed_ports: ports.split(",").map((p) => Number(p.trim())).filter((n) => n > 0 && n < 65536),
@@ -403,6 +417,8 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
     };
     try {
       await api(`/services/${service.id}`, { method: "PATCH", headers: { "If-Match": String(service.version) }, body });
+      // Domains live on the service; save them (and rebuild) as a second step.
+      await api(`/services/${service.id}/domains`, { method: "PATCH", body: { domains: domains.split("\n") } });
       onSaved();
     } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   };
@@ -423,61 +439,228 @@ function ServiceForm({ service, ruleSets, ingress, egress, onClose, onSaved }: {
           <input className="input mono" value={service.slug} disabled />
         </Field>
       </div>
-      <div className="grid g3">
-        <Field label="Список доменов" hint={ruleSetId ? undefined : "Добавить или убрать домены можно после выбора списка."}>
-          <select className="select" value={ruleSetId} onChange={(e) => setRuleSetId(e.target.value)}>
-            <option value="">— не выбран —</option>
-            {ruleSets.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          {ruleSetId && (
-            <Link className="linklike tiny" to={`/rule-sets/${ruleSetId}`} onClick={onClose}
-              style={{ display: "inline-block", marginTop: 6 }}>
-              Изменить домены этого списка →
-            </Link>
-          )}
-        </Field>
-        <Field label="Точка входа">
-          <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
-            <option value="">— не выбрана —</option>
-            {ingress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Точка выхода">
-          <select className="select" value={egressId} onChange={(e) => setEgressId(e.target.value)}>
-            <option value="">— не выбрана —</option>
-            {egress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </Field>
+
+      <div className="tabs" role="tablist">
+        {([["domains", "Домены"], ["route", "Маршрут"], ["params", "Параметры"]] as const).map(([v, l]) => (
+          <button key={v} type="button" role="tab" aria-selected={tab === v}
+            className={`tab${tab === v ? " active" : ""}`} onClick={() => setTab(v)}>{l}</button>
+        ))}
       </div>
-      <div className="grid g3">
-        <Field label="TTL ответа DNS" hint="30–300 с. Меньше — быстрее переключение, больше запросов.">
-          <input className="input num" type="number" min={30} max={300} value={ttl}
-            onChange={(e) => setTtl(Number(e.target.value))} />
-        </Field>
-        <Field label="Приоритет" hint="Больше — важнее при пересечении доменов между сервисами.">
-          <input className="input num" type="number" value={priority}
-            onChange={(e) => setPriority(Number(e.target.value))} />
-        </Field>
-        <Field label="Разрешённые порты" hint="Через запятую. Обычно достаточно 443.">
-          <input className="input mono" value={ports} onChange={(e) => setPorts(e.target.value)} />
-        </Field>
+
+      {tab === "domains" && (
+        <>
+          <Field label="Домены" hint="По одному в строке. Домен покрывает и все поддомены (openai.com → и api.openai.com). Только точный хост — full:host. Правки применятся после сохранения.">
+            <textarea className="textarea mono" rows={8} value={domains}
+              placeholder={"gemini.google.com\naistudio.google.com"}
+              onChange={(e) => setDomains(e.target.value)} />
+            <label className="btn sm" style={{ marginTop: 8, display: "inline-flex", cursor: "pointer" }}>
+              Загрузить файл
+              <input type="file" accept=".txt,.list,text/plain" style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) addFile(f); e.target.value = ""; }} />
+            </label>
+          </Field>
+          <SourcesSection serviceId={service.id} />
+        </>
+      )}
+
+      {tab === "route" && (
+        <>
+          <div className="grid g2">
+            <Field label="Точка входа" hint="Куда устройства отправляют запросы.">
+              <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
+                <option value="">— не выбрана —</option>
+                {ingress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Точка выхода" hint="Через кого сервис выходит к сайту.">
+              <select className="select" value={egressId} onChange={(e) => setEgressId(e.target.value)}>
+                <option value="">— не выбрана —</option>
+                {egress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Домен для проверки"
+            hint="Панель подключается к точке входа с этим именем и проверяет, что сертификат принадлежит настоящему сервису. Не используйте адреса, требующие входа в аккаунт.">
+            <input className="input mono" value={probeHost} onChange={(e) => setProbeHost(e.target.value)}
+              placeholder="gemini.google.com" />
+          </Field>
+        </>
+      )}
+
+      {tab === "params" && (
+        <>
+          <div className="grid g3">
+            <Field label="TTL ответа DNS" hint="30–300 с. Меньше — быстрее переключение, больше запросов.">
+              <input className="input num" type="number" min={30} max={300} value={ttl}
+                onChange={(e) => setTtl(Number(e.target.value))} />
+            </Field>
+            <Field label="Приоритет" hint="Больше — важнее при пересечении доменов между сервисами.">
+              <input className="input num" type="number" value={priority}
+                onChange={(e) => setPriority(Number(e.target.value))} />
+            </Field>
+            <Field label="Разрешённые порты" hint="Через запятую. Обычно достаточно 443.">
+              <input className="input mono" value={ports} onChange={(e) => setPorts(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Режим UDP / QUIC">
+            <Segmented value={udp} onChange={setUdp} wide options={[
+              { value: "disabled_fallback", label: "Откат на TCP", hint: "UDP/443 отклоняется, браузер уходит на TCP. Рекомендуется по умолчанию." },
+              { value: "proxy", label: "Проксировать UDP", hint: "Включайте только после сквозной проверки конкретного сервиса." },
+              { value: "separate_ip", label: "Отдельный IP", hint: "Отдельный адрес под QUIC." },
+            ]} />
+          </Field>
+          <label className="check">
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            Сервис включён
+          </label>
+        </>
+      )}
+
+      {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-update sources, managed inside the service window. Each source is a
+// GitHub/HTTPS list that feeds the service's domains; adding, removing, or
+// refreshing rebuilds and activates at once (config still needs a deploy).
+// ---------------------------------------------------------------------------
+
+type Source = { id: string; name: string; type: string; url: string; repo: string; ref: string; path: string };
+type SourceFetch = { source_id: string; status: string; entries: number; error: string };
+
+function SourcesSection({ serviceId }: { serviceId: string }) {
+  const data = useAsync<{ sources: Source[]; fetches: SourceFetch[] }>(() => api(`/services/${serviceId}/sources`), [serviceId]);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<Source | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const sources = data.data?.sources ?? [];
+
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      const r = await api<{ build: { unchanged: boolean; added: number; removed: number } }>(
+        `/services/${serviceId}/refresh`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+      toast({ kind: "ok", title: r.build.unchanged ? "Изменений нет" : "Домены обновлены",
+        body: r.build.unchanged ? undefined : `Добавлено ${r.build.added}, удалено ${r.build.removed}. Соберите конфигурацию, чтобы применить.` });
+      data.reload();
+    } catch (e) { toast({ kind: "bad", title: "Обновление не удалось", body: errText(e) }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Field label="Автообновление доменов"
+      hint="Необязательно. Подтяните список с GitHub или по ссылке — он будет обновляться поверх доменов, вписанных вручную.">
+      {sources.length > 0 && (
+        <div className="table-wrap" style={{ marginBottom: 8 }}>
+          <table className="table">
+            <tbody>
+              {sources.map((s) => {
+                const last = data.data!.fetches.find((f) => f.source_id === s.id);
+                return (
+                  <tr key={s.id}>
+                    <td>
+                      <div className="small" style={{ fontWeight: 550 }}>{s.name || s.repo || s.url || s.path}</div>
+                      <div className="tiny dim mono" style={{ wordBreak: "break-all" }}>
+                        {s.repo ? `${s.repo}@${s.ref || "main"}:${s.path}` : s.url || s.path}
+                      </div>
+                      {last && (
+                        <div className="tiny" style={{ marginTop: 2, color: last.status === "ok" ? "var(--text-3)" : "var(--danger)" }}>
+                          {last.status === "ok" ? `${last.entries} доменов` : last.error}
+                        </div>
+                      )}
+                    </td>
+                    <td className="actions">
+                      <button type="button" className="btn sm ghost danger" aria-label="Удалить источник"
+                        onClick={() => setRemoving(s)}><IconTrash /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="btn-row">
+        <button type="button" className="btn sm" onClick={() => setAdding(true)}><IconPlus />Добавить источник</button>
+        {sources.length > 0 && (
+          <button type="button" className="btn sm" disabled={busy} onClick={refresh}>
+            {busy ? <span className="spin" /> : <IconRefresh />}Обновить сейчас
+          </button>
+        )}
       </div>
-      <Field label="Режим UDP / QUIC">
-        <Segmented value={udp} onChange={setUdp} wide options={[
-          { value: "disabled_fallback", label: "Откат на TCP", hint: "UDP/443 отклоняется, браузер уходит на TCP. Рекомендуется по умолчанию." },
-          { value: "proxy", label: "Проксировать UDP", hint: "Включайте только после сквозной проверки конкретного сервиса." },
-          { value: "separate_ip", label: "Отдельный IP", hint: "Отдельный адрес под QUIC." },
-        ]} />
+
+      {adding && (
+        <AddServiceSource serviceId={serviceId} onClose={() => setAdding(false)}
+          onAdded={() => { setAdding(false); data.reload(); }} />
+      )}
+      {removing && (
+        <Confirm title="Удалить источник?" danger confirmLabel="Удалить"
+          body="Домены этого источника исчезнут из сервиса. Соберите конфигурацию, чтобы применить."
+          onClose={() => setRemoving(null)}
+          onConfirm={async () => {
+            await api(`/services/${serviceId}/sources/${removing.id}`, { method: "DELETE" });
+            setRemoving(null); data.reload();
+          }} />
+      )}
+    </Field>
+  );
+}
+
+function AddServiceSource({ serviceId, onClose, onAdded }: { serviceId: string; onClose: () => void; onAdded: () => void }) {
+  const [type, setType] = useState("github_repo");
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [repo, setRepo] = useState("");
+  const [ref, setRef] = useState("main");
+  const [path, setPath] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal title="Источник доменов" onClose={onClose} footer={
+      <>
+        <button className="btn" onClick={onClose}>Отмена</button>
+        <button className="btn primary" disabled={busy} onClick={async () => {
+          setBusy(true); setError("");
+          try {
+            await api(`/services/${serviceId}/sources`, { method: "POST", body: { name, type, url, repo, ref, path } });
+            onAdded();
+          } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+        }}>{busy ? <span className="spin" /> : null}Добавить</button>
+      </>
+    }>
+      <Field label="Откуда">
+        <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="github_repo">GitHub: репозиторий + путь</option>
+          <option value="github_raw">GitHub: прямая ссылка</option>
+          <option value="https">Произвольный HTTPS-адрес</option>
+        </select>
       </Field>
-      <Field label="Домен для проверки"
-        hint="Панель подключается к точке входа с этим именем и проверяет, что сертификат принадлежит настоящему сервису. Не используйте адреса, требующие входа в аккаунт.">
-        <input className="input mono" value={probeHost} onChange={(e) => setProbeHost(e.target.value)}
-          placeholder="gemini.google.com" />
+      <Field label="Название" hint="Как источник будет подписан.">
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="OpenAI (v2fly)" />
       </Field>
-      <label className="check">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Сервис включён
-      </label>
+      {type === "github_repo" ? (
+        <>
+          <div className="grid g2">
+            <Field label="Репозиторий"><input className="input mono" value={repo}
+              onChange={(e) => setRepo(e.target.value)} placeholder="v2fly/domain-list-community" /></Field>
+            <Field label="Ветка или тег" hint="Для стабильности лучше тег или commit — ветка меняется без спроса.">
+              <input className="input mono" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="main" />
+            </Field>
+          </div>
+          <Field label="Путь к файлу"><input className="input mono" value={path}
+            onChange={(e) => setPath(e.target.value)} placeholder="data/openai" /></Field>
+        </>
+      ) : (
+        <Field label="Адрес" hint="Только HTTPS. Обычный текстовый список доменов, по одному в строке.">
+          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://raw.githubusercontent.com/owner/repo/main/list.txt" />
+        </Field>
+      )}
       {error && <div className="notice bad" role="alert"><span className="notice-bar" /><div className="n-body">{error}</div></div>}
     </Modal>
   );

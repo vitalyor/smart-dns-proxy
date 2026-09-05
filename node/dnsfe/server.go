@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,13 @@ type Server struct {
 	clientTC *dns.Client
 	inflight chan struct{}
 	once     sync.Once
+	// queryLog logs one line per query to stdout when SMARTDNS_QUERY_LOG=1 — a
+	// noisy terminal diagnostic, off by default.
+	queryLog bool
+	// log is the always-on in-memory ring the panel reads for the live Logs view.
+	log *ring
+	// counts tallies queries per device token — how many and when, never what.
+	counts *counters
 }
 
 // New builds a server bound to a router.
@@ -58,8 +66,14 @@ func New(r *Router) *Server {
 		client:   &dns.Client{Net: "udp", Timeout: 4 * time.Second, UDPSize: 4096},
 		clientTC: &dns.Client{Net: "tcp", Timeout: 5 * time.Second},
 		inflight: make(chan struct{}, maxc),
+		queryLog: os.Getenv("SMARTDNS_QUERY_LOG") == "1",
+		log:      newRing(1000),
+		counts:   newCounters(),
 	}
 	s.upstream.Store(&c.DNS.Upstream)
+	if s.queryLog {
+		slog.Info("query logging enabled (SMARTDNS_QUERY_LOG=1)")
+	}
 	return s
 }
 
@@ -76,7 +90,17 @@ type dnsHandler struct {
 
 func (h dnsHandler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	ip := addrOf(w.RemoteAddr())
-	resp := h.s.Handle(req, ip, h.proto, "")
+	// DoT carries the device token in the server name (<token>.dns.example),
+	// because Android's Private DNS field accepts nothing but a hostname.
+	token := ""
+	if h.proto == "dot" {
+		if cs, ok := w.(dns.ConnectionStater); ok {
+			if st := cs.ConnectionState(); st != nil {
+				token = h.s.Router.TokenFromSNI(st.ServerName)
+			}
+		}
+	}
+	resp := h.s.Handle(req, ip, h.proto, token)
 	if resp == nil {
 		_ = w.Close()
 		return
@@ -89,38 +113,69 @@ func (h dnsHandler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 }
 
+// ApplyTokens swaps the accepted token set and drops tallies for tokens that
+// left it, so the access set is the single source of truth for both.
+func (s *Server) ApplyTokens(tokens []string) {
+	s.Router.SetTokens(tokens)
+	s.counts.retain(tokens)
+}
+
 // Handle produces the response for one query. Exported for tests.
-func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string) *dns.Msg {
+func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string) (resp *dns.Msg) {
 	start := time.Now()
 	mInflight.Add(1)
+	decision, qname, qtype := "malformed", "", ""
 	defer func() {
 		mInflight.Add(-1)
-		mLatency.Observe(time.Since(start).Seconds(), "proto", proto)
+		took := time.Since(start)
+		mLatency.Observe(took.Seconds(), "proto", proto)
+		rcode := "nil"
+		if resp != nil {
+			rcode = dns.RcodeToString[resp.Rcode]
+		}
+		// Только обслуженные запросы и только выданные токены: отказ не должен
+		// тратить чужую квоту, а неизвестный токен — заводить строку в учёте.
+		if !strings.HasPrefix(decision, "denied:") && decision != "malformed" && s.Router.KnownToken(dohToken) {
+			s.counts.hit(dohToken, start)
+		}
+		s.log.add(LogEntry{
+			TS: start.UnixMilli(), Client: client.String(), Proto: proto, Name: qname, Type: qtype,
+			Decision: decision, Rcode: rcode, MS: took.Milliseconds(),
+		})
+		if s.queryLog {
+			slog.Info("dnsq", "proto", proto, "client", client.String(),
+				"name", qname, "type", qtype, "decision", decision,
+				"rcode", rcode, "ms", took.Milliseconds())
+		}
 	}()
 
 	if len(req.Question) != 1 || req.Opcode != dns.OpcodeQuery {
 		mRejected.Inc("reason", "malformed")
 		return refuse(req, dns.RcodeFormatError)
 	}
+	q := req.Question[0]
+	qname = NormalizeQName(q.Name)
+	qtype = dns.TypeToString[q.Qtype]
+
 	if !s.Router.AllowClient(client, dohToken) {
 		mRejected.Inc("reason", "acl")
+		decision = "denied:acl"
 		return refuse(req, dns.RcodeRefused)
 	}
 	if !s.limiter.allow(client) {
 		mRejected.Inc("reason", "rate_limit")
+		decision = "denied:ratelimit"
 		return refuse(req, dns.RcodeRefused)
 	}
 
-	q := req.Question[0]
-	host := NormalizeQName(q.Name)
-	qtype := dns.TypeToString[q.Qtype]
-	svc := s.Router.Lookup(host)
-
+	svc := s.Router.Lookup(qname)
 	if svc == nil {
 		mQueries.Inc("proto", proto, "qtype", qtype, "kind", "recursive")
+		decision = "direct"
 		return s.forward(req, proto)
 	}
 	mQueries.Inc("proto", proto, "qtype", qtype, "kind", "managed")
+	decision = "managed:" + svc.Slug
 	return s.synthesize(req, svc, q, proto)
 }
 
@@ -311,12 +366,24 @@ func (s *Server) ListenUDP(addr string) *dns.Server {
 	return &dns.Server{Addr: addr, Net: "udp", Handler: dnsHandler{s, "udp"}, UDPSize: 4096}
 }
 
+// tcpConnPolicy keeps a phone's persistent DoT/TCP connection alive. miekg/dns
+// otherwise defaults to MaxTCPQueries=128 (closes the connection after 128
+// queries) and an 8s idle timeout — a phone reaches 128 lookups in minutes, and
+// on the close iOS fails open to the network's plain DNS, so managed domains
+// resolve directly and stop being routed through the node. -1 removes the query
+// cap; the long idle keeps a briefly-quiet connection open.
+func tcpConnPolicy(s *dns.Server) *dns.Server {
+	s.MaxTCPQueries = -1
+	s.IdleTimeout = func() time.Duration { return 120 * time.Second }
+	return s
+}
+
 func (s *Server) ListenTCP(addr string) *dns.Server {
-	return &dns.Server{Addr: addr, Net: "tcp", Handler: dnsHandler{s, "tcp"}}
+	return tcpConnPolicy(&dns.Server{Addr: addr, Net: "tcp", Handler: dnsHandler{s, "tcp"}})
 }
 
 func (s *Server) ListenTLS(addr string, tc *tls.Config) *dns.Server {
-	return &dns.Server{Addr: addr, Net: "tcp-tls", TLSConfig: tc, Handler: dnsHandler{s, "dot"}}
+	return tcpConnPolicy(&dns.Server{Addr: addr, Net: "tcp-tls", TLSConfig: tc, Handler: dnsHandler{s, "dot"}})
 }
 
 // DoHHandler implements RFC 8484 GET and POST.

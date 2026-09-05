@@ -96,11 +96,54 @@ export function Card({ title, eyebrow, actions, children, tight }: {
             {title && <h2>{title}</h2>}
           </div>
           <div className="spacer" />
-          {actions}
+          {actions && <div className="card-actions">{actions}</div>}
         </header>
       )}
       <div className={`card-body${tight ? " tight" : ""}`}>{children}</div>
     </section>
+  );
+}
+
+// Раздел: несколько карточек, объединённых одним смыслом. Без него страница
+// читается как свалка плиток — именно это и было главной претензией.
+export function Section({ title, note, actions, children }: {
+  title: string; note?: string; actions?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <section className="section">
+      <header className="section-head">
+        <h2>{title}</h2>
+        {note && <span className="section-note">{note}</span>}
+        <div className="spacer" />
+        {actions}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+export type Tone = "direct" | "managed" | "ok" | "warn" | "bad" | "violet" | "blue";
+
+// Плитка показателя: цветной значок слева даёт зацепку глазу, значение —
+// моноширинное и крупное, подпись объясняет единицы.
+export function Stat({ icon, tone = "direct", label, value, note, state, delta }: {
+  icon: ReactNode; tone?: Tone; label: string; value: ReactNode; note?: ReactNode;
+  state?: "ok" | "warn" | "bad" | "accent"; delta?: { dir: "up" | "down"; text: string };
+}) {
+  return (
+    <div className={`card tile tone-${tone}`}>
+      <span className="tile-ico">{icon}</span>
+      <div className="tile-main">
+        <div className="tile-label">{label}</div>
+        <div className={`tile-value ${state ?? ""}`}>{value}</div>
+        {delta && (
+          <div className={`tile-delta ${delta.dir}`}>
+            {delta.dir === "up" ? "\u2197" : "\u2198"} {delta.text}
+          </div>
+        )}
+        {note && <div className="tile-note">{note}</div>}
+      </div>
+    </div>
   );
 }
 
@@ -226,15 +269,37 @@ export function Confirm({ title, body, danger, confirmLabel, onConfirm, onClose 
   );
 }
 
+// navigator.clipboard существует только в защищённом контексте: по https или
+// на localhost. Панель, открытая из локальной сети по адресу вида
+// http://192.168.x.x:8080, защищённой не считается, и там остаётся старый
+// execCommand — некрасивый, но работающий во всех браузерах.
+async function copyText(value: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(value); return true; } catch { /* пробуем запасной путь */ }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, value.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+
 export function Copyable({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   const toast = useToast();
   return (
     <button className="btn sm" onClick={async () => {
-      try {
-        await navigator.clipboard.writeText(value);
+      if (await copyText(value)) {
         setDone(true); setTimeout(() => setDone(false), 1800);
-      } catch { toast({ kind: "warn", title: "Не удалось скопировать", body: "Выделите текст вручную." }); }
+      } else {
+        toast({ kind: "warn", title: "Не удалось скопировать", body: "Выделите текст вручную." });
+      }
     }}>
       {done ? <IconCheck /> : <IconCopy />}{label ?? (done ? "Скопировано" : "Копировать")}
     </button>

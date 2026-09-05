@@ -35,8 +35,8 @@ services:
       context: .
       dockerfile: deploy/panel/Dockerfile
       args:
-        VERSION: ${SMARTDNS_VERSION:-2.0.2}
-    image: smartdns/panel-api:${SMARTDNS_VERSION:-2.0.2}
+        VERSION: ${SMARTDNS_VERSION:-2.0.3}
+    image: smartdns/panel-api:${SMARTDNS_VERSION:-2.0.3}
     restart: unless-stopped
     logging: *logging
     depends_on:
@@ -93,23 +93,42 @@ services:
       # reads: smartdns-<ts>.tar holding db-<ts>.dump + panelstate-<ts>.tar, so an
       # automatic backup restores with no format juggling. Optionally encrypted.
       - |
-        [ -n "$$BACKUP_PASSPHRASE" ] && { command -v openssl >/dev/null || apk add --no-cache openssl >/dev/null 2>&1 || true; }
+        # Заданный пароль — обещание, что копия ляжет зашифрованной. Если
+        # openssl не встал, лучше умереть на старте, чем молча писать открытый
+        # текст: незашифрованная копия содержит приватный ключ CA.
+        if [ -n "$$BACKUP_PASSPHRASE" ]; then
+          command -v openssl >/dev/null || apk add --no-cache openssl >/dev/null 2>&1 || true
+          if ! command -v openssl >/dev/null; then
+            echo '{"event":"backup_disabled","reason":"openssl_missing","detail":"BACKUP_PASSPHRASE задан, но openssl недоступен"}' >&2
+            exit 1
+          fi
+        fi
         while true; do
           ts=$$(date -u +%Y%m%dT%H%M%SZ)
           work=$$(mktemp -d)
+          ok=0
           if pg_dump -Fc -f "$$work/db-$$ts.dump" && tar -cf "$$work/panelstate-$$ts.tar" -C /var/lib/smartdns-panel .; then
             tar -cf "$$work/smartdns-$$ts.tar" -C "$$work" "db-$$ts.dump" "panelstate-$$ts.tar"
-            if [ -n "$$BACKUP_PASSPHRASE" ] && command -v openssl >/dev/null; then
-              openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$$work/smartdns-$$ts.tar" -out "/backups/smartdns-$$ts.tar.enc" -pass env:BACKUP_PASSPHRASE
+            if [ -n "$$BACKUP_PASSPHRASE" ]; then
               f=/backups/smartdns-$$ts.tar.enc
+              if openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$$work/smartdns-$$ts.tar" -out "$$f" -pass env:BACKUP_PASSPHRASE; then
+                ok=1
+              else
+                # Половина шифротекста хуже, чем ничего: её потом примут за копию.
+                rm -f "$$f"
+                echo '{"event":"backup_failed","reason":"encrypt_failed"}' >&2
+              fi
             else
-              cp "$$work/smartdns-$$ts.tar" "/backups/smartdns-$$ts.tar"; f=/backups/smartdns-$$ts.tar
+              f=/backups/smartdns-$$ts.tar
+              cp "$$work/smartdns-$$ts.tar" "$$f" && ok=1
             fi
+          else
+            echo '{"event":"backup_failed","reason":"dump_failed"}' >&2
+          fi
+          if [ "$$ok" = 1 ]; then
             sha256sum "$$f" > "$$f.sha256"
             printf '# HELP smartdns_backup_last_success_seconds Unix time of the last successful backup\n# TYPE smartdns_backup_last_success_seconds gauge\nsmartdns_backup_last_success_seconds %s\n' "$$(date -u +%s)" > /backups/backup.prom
             echo "{\"event\":\"backup_ok\",\"file\":\"$$f\"}"
-          else
-            echo "{\"event\":\"backup_failed\"}" >&2
           fi
           rm -rf "$$work"
           find /backups -name 'smartdns-*.tar' -mtime +$$BACKUP_RETENTION_DAYS -delete

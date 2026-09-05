@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/miekg/dns v1.1.62
+	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.53.0
 	golang.org/x/net v0.56.0
 )

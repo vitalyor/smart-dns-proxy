@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2310151F'/><path d='M6 16h7m6 0h7' stroke='%233FD9C4' stroke-width='2.5' stroke-linecap='round'/><circle cx='16' cy='16' r='3.5' fill='%23F5A742'/></svg>">
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<title>Мои устройства</title>
+<style>
+  /* Страница подписки — то же изделие, что и панель, увиденное с другой
+     стороны: те же токены, та же гарнитура, тот же ритм. Шрифты отдаёт сам
+     сервис: сторонний источник узнавал бы, кто и когда открыл личную ссылку. */
+  @font-face{font-family:"Geist";font-style:normal;font-weight:400 700;font-display:swap;
+    src:url("/fonts/geist-cyrillic.woff2") format("woff2");
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Geist";font-style:normal;font-weight:400 700;font-display:swap;
+    src:url("/fonts/geist-latin.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,
+      U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+  @font-face{font-family:"Geist Mono";font-style:normal;font-weight:400 700;font-display:swap;
+    src:url("/fonts/geist-mono-cyrillic.woff2") format("woff2");
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+  @font-face{font-family:"Geist Mono";font-style:normal;font-weight:400 700;font-display:swap;
+    src:url("/fonts/geist-mono-latin.woff2") format("woff2");
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,
+      U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+  :root{
+    --ground:#0c111b; --ground-2:#10161f; --surface:#161d2a; --surface-2:#1d2534; --surface-3:#252e40;
+    --line:#283244; --line-soft:#1f2836;
+    --text:#f2f5fa; --text-2:#a7b3c6; --text-3:#8d9aad;
+    --direct:#3fd9c4; --managed:#f5a742;
+    --ok:#3ddc97; --warn:#fbc55b; --danger:#fb6f84;
+    --violet:#a48bfb; --blue:#5eaefd;
+    --on-accent:#04211e;
+    --radius:14px; --radius-sm:10px; --radius-xs:8px;
+    --shadow-1:0 1px 2px rgb(0 0 0/.5);
+    --shadow-2:0 1px 2px rgb(0 0 0/.4), 0 12px 32px -16px rgb(0 0 0/.75);
+    --shadow-3:0 -20px 60px -24px rgb(0 0 0/.85), 0 2px 8px rgb(0 0 0/.5);
+    --scrim:rgb(3 6 12/.72);
+    --glow:0 0 0 1px color-mix(in srgb, var(--direct) 22%, transparent);
+    --sans:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Arial,sans-serif;
+    --mono:"Geist Mono",ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+    --ease:cubic-bezier(.2,.8,.3,1);
+    color-scheme:dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --ground:#f1f4f9; --ground-2:#e9eef5; --surface:#ffffff; --surface-2:#f3f6fb; --surface-3:#e6ecf5;
+      --line:#dde4ef; --line-soft:#e8edf5;
+      --text:#0a0f18; --text-2:#4d596b; --text-3:#5d6a80;
+      --direct:#066b61; --managed:#8b5605;
+      --ok:#09693f; --warn:#7d5800; --danger:#b32a40;
+      --violet:#5a45c2; --blue:#1a66c7;
+      --on-accent:#ffffff;
+      --shadow-1:0 1px 2px rgb(15 23 42/.06);
+      --shadow-2:0 1px 2px rgb(15 23 42/.04), 0 12px 28px -18px rgb(15 23 42/.28);
+      --shadow-3:0 -16px 50px -22px rgb(15 23 42/.28), 0 2px 8px rgb(15 23 42/.06);
+      --scrim:rgb(15 23 42/.38);
+      color-scheme:light;
+    }
+  }
+
+  *{box-sizing:border-box}
+  /* display из класса перебивает браузерное [hidden]: без этого скрытый лист
+     оставался в потоке — невидимый, но осязаемый для мыши и скринридера. */
+  [hidden]{display:none !important}
+  body{margin:0;background:var(--ground);color:var(--text);
+    font:400 16px/1.6 var(--sans);font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased}
+  ::selection{background:color-mix(in srgb,var(--direct) 32%,transparent)}
+  .wrap{max-width:640px;margin:0 auto;
+    padding:max(20px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-left))
+            calc(56px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-right))}
+  @media(min-width:640px){.wrap{padding-left:24px;padding-right:24px;padding-top:36px}}
+
+  .top{display:flex;align-items:center;gap:11px;margin-bottom:22px}
+  .mark{width:36px;height:36px;flex:none}
+  .top>div:not(.spacer){min-width:0}
+  .brand{font-size:17px;font-weight:600;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .brand-sub{font:500 10px/1 var(--mono);color:var(--text-3);letter-spacing:.18em;text-transform:uppercase;margin-top:3px}
+  .spacer{flex:1}
+
+  .card{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--radius);
+    padding:clamp(20px,5vw,28px);margin-bottom:16px;box-shadow:var(--shadow-1)}
+  h1{font-size:clamp(26px,6.5vw,32px);line-height:1.15;margin:0;letter-spacing:-.04em;overflow-wrap:anywhere}
+  h2{font:500 11.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--text-3);margin:0 0 16px}
+  .sub{color:var(--text-2);font-size:15.5px;margin:10px 0 0;line-height:1.55}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;font:500 12px/1.6 var(--mono);
+    padding:5px 12px;border-radius:999px;border:1px solid var(--line);color:var(--text-2);
+    background:var(--surface-2);white-space:nowrap}
+  .pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent);
+    background:color-mix(in srgb,var(--ok) 10%,var(--surface-2))}
+  .pill.bad{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent);
+    background:color-mix(in srgb,var(--danger) 10%,var(--surface-2))}
+  .dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex:none}
+
+  /* Три показателя подписки — те же плитки, что на приборной панели:
+     цветной значок слева даёт зацепку глазу, значение крупное и моноширинное. */
+  .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:26px 0 0}
+  @media(max-width:600px){.facts{grid-template-columns:1fr}}
+  .fact{display:flex;align-items:flex-start;gap:14px;background:var(--surface-2);
+    border:1px solid var(--line-soft);border-radius:var(--radius-sm);padding:16px;min-width:0}
+  .fact-ico{width:42px;height:42px;flex:none;border-radius:12px;display:grid;place-items:center;
+    color:var(--tone,var(--direct));
+    background:color-mix(in srgb,var(--tone,var(--direct)) 14%,transparent);
+    border:1px solid color-mix(in srgb,var(--tone,var(--direct)) 28%,transparent)}
+  .fact-ico svg{width:20px;height:20px}
+  /* Свой оттенок на каждый показатель: так их различают, не читая подписи.
+     Состояние важнее оттенка, поэтому правила ниже перебивают. */
+  .fact:nth-child(1){--tone:var(--violet)}
+  .fact:nth-child(2){--tone:var(--direct)}
+  .fact:nth-child(3){--tone:var(--blue)}
+  .fact.warn{--tone:var(--warn)}
+  .fact.bad{--tone:var(--danger)}
+  .fact-main{min-width:0;flex:1}
+  .fact dt{font-size:13.5px;color:var(--text-2);margin:0}
+  .fact dd{margin:5px 0 0;font:600 21px/1.2 var(--mono);font-variant-numeric:tabular-nums;
+    letter-spacing:-.04em;overflow-wrap:anywhere}
+  .fact dd small{display:block;font:400 12.5px/1.4 var(--sans);color:var(--text-3);margin-top:5px;
+    letter-spacing:0}
+  @media (prefers-color-scheme: light){
+    .fact-ico{background:color-mix(in srgb,var(--tone,var(--direct)) 11%,#fff);
+      border-color:color-mix(in srgb,var(--tone,var(--direct)) 32%,transparent)}
+  }
+
+  .btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    min-height:48px;padding:12px 18px;border-radius:var(--radius-sm);border:1px solid var(--line);
+    background:var(--surface-2);color:var(--text);font:500 15px/1.2 var(--sans);
+    cursor:pointer;touch-action:manipulation;text-decoration:none;white-space:nowrap;
+    transition:background 180ms var(--ease),border-color 180ms var(--ease),transform 90ms var(--ease)}
+  .btn:hover:not(:disabled){background:var(--surface-3);border-color:var(--text-3)}
+  .btn:active:not(:disabled){transform:scale(.98)}
+  .btn:focus-visible{outline:2px solid var(--direct);outline-offset:2px}
+  .btn:disabled{opacity:.42;cursor:default}
+  .btn.primary{background:var(--direct);border-color:var(--direct);color:var(--on-accent);font-weight:600}
+  .btn.primary:hover:not(:disabled){background:color-mix(in srgb,var(--direct) 86%,var(--text));border-color:transparent}
+  .btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent);background:transparent}
+  .btn.danger:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 12%,transparent);border-color:var(--danger)}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--text-2)}
+  .btn.ghost:hover:not(:disabled){background:var(--surface-2);color:var(--text)}
+  .btn.block{width:100%}
+  .btn.lg{min-height:56px;font-size:17px;font-weight:600}
+  .btn.sm{min-height:46px;padding:9px 15px;font-size:14.5px}
+  .btn svg{width:17px;height:17px;flex:none}
+  .icon-btn{width:48px;height:48px;min-height:48px;padding:0}
+
+  .dev{display:flex;align-items:center;gap:14px;padding:17px 0;border-top:1px solid var(--line-soft)}
+  .dev:first-child{border-top:0;padding-top:2px}
+  .dev-ico{width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:10px;
+    background:var(--surface-2);border:1px solid var(--line-soft);color:var(--text-2)}
+  .dev-ico svg{width:21px;height:21px}
+  .dev-main{flex:1;min-width:0}
+  .dev-name{font-weight:600;font-size:16.5px;letter-spacing:-.015em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev-meta{color:var(--text-3);font:400 13.5px/1.45 var(--sans);font-variant-numeric:tabular-nums;margin-top:2px}
+  .dev-meta .live{color:var(--ok)}
+  .dev-acts{display:flex;gap:8px;flex:none}
+  @media(max-width:470px){
+    .dev{flex-wrap:wrap;padding:16px 0}
+    .dev-acts{width:100%;margin-top:4px}
+    .dev-acts .btn{flex:1}
+    .dev-acts .icon-btn{flex:none}
+  }
+  .empty{color:var(--text-2);font-size:15px;margin:0;padding:4px 0 2px}
+
+  /* pointer-events снимаются, пока слой не «включён»: закрытый лист ещё
+     260 мс держится в DOM ради анимации и раньше глотал следующий тап. */
+  .scrim{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(4px);
+    opacity:0;pointer-events:none;transition:opacity .2s var(--ease);z-index:40}
+  .scrim.on{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:var(--kb,0px);z-index:50;
+    background:var(--surface);border-top:1px solid var(--line);
+    border-radius:18px 18px 0 0;box-shadow:var(--shadow-3);
+    max-height:min(88vh,88dvh);display:flex;flex-direction:column;
+    pointer-events:none;outline:none;
+    transform:translateY(100%);transition:transform .3s var(--ease)}
+  .sheet.on{transform:translateY(0);pointer-events:auto}
+  @media(min-width:640px){
+    .sheet{left:50%;right:auto;bottom:auto;top:50%;width:min(540px,calc(100vw - 40px));
+      max-height:min(86vh,86dvh);
+      border-radius:var(--radius);border:1px solid var(--line);
+      transform:translate(-50%,-46%) scale(.985);opacity:0;
+      transition:transform .22s var(--ease),opacity .18s ease}
+    .sheet.on{transform:translate(-50%,-50%) scale(1);opacity:1}
+  }
+  @media(max-height:460px) and (max-width:900px){
+    .sheet{max-height:94dvh}
+    .sheet-head{padding:12px 16px}
+    .sheet-body{padding:14px 16px}
+  }
+  .sheet-head{position:relative;display:flex;align-items:center;gap:12px;padding:18px 20px;
+    border-bottom:1px solid var(--line-soft);flex:none}
+  .sheet-head h3{margin:0;font-size:18px;font-weight:600;letter-spacing:-.025em}
+  .grabber{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:36px;height:4px;
+    border-radius:2px;background:var(--line)}
+  @media(min-width:640px){.grabber{display:none}}
+  .sheet-body{padding:20px;overflow-y:auto;overscroll-behavior:contain;min-height:0;
+    -webkit-overflow-scrolling:touch}
+  .sheet-foot{padding:16px 20px calc(16px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line-soft);display:flex;gap:10px;flex:none;flex-wrap:wrap}
+  @media(min-width:640px){.sheet-foot{padding-bottom:16px}}
+  .sheet-foot .btn{flex:1}
+
+  .plats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:0 0 18px}
+  @media(max-width:420px){.plats{grid-template-columns:1fr}}
+  .plat{display:flex;align-items:center;gap:13px;padding:15px;min-height:68px;text-align:left;
+    border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);
+    color:var(--text);font:500 15.5px/1.3 var(--sans);cursor:pointer;touch-action:manipulation;
+    transition:border-color 180ms var(--ease),background 180ms var(--ease),transform 90ms var(--ease)}
+  .plat>span{min-width:0}
+  .plat:hover{border-color:var(--text-3)}
+  .plat:active{transform:scale(.99)}
+  .plat:focus-visible{outline:2px solid var(--direct);outline-offset:2px}
+  .plat[aria-pressed="true"]{border-color:var(--direct);
+    background:color-mix(in srgb,var(--direct) 12%,var(--surface-2));cursor:default;box-shadow:var(--glow)}
+  .plat svg{width:22px;height:22px;flex:none;color:var(--text-3)}
+  .plat[aria-pressed="true"] svg{color:var(--direct)}
+  .plat small{display:block;color:var(--text-3);font:400 12px/1.4 var(--sans);margin-top:1px}
+
+  label{display:block;font-size:13px;font-weight:500;color:var(--text-2);margin:0 0 7px}
+  input[type=text]{width:100%;font:400 16px/1.4 var(--sans);padding:12px 13px;border-radius:var(--radius-sm);
+    border:1px solid var(--line);background:var(--ground-2);color:var(--text);
+    transition:border-color 180ms var(--ease),box-shadow 180ms var(--ease)}
+  input[type=text]:focus{outline:none;border-color:var(--direct);box-shadow:var(--glow)}
+
+  .addr{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--ground-2);
+    border:1px solid var(--line);border-radius:var(--radius-sm);padding:11px 13px;margin:16px 0 0}
+  .addr code{font:400 14px/1.55 var(--mono);word-break:break-all;flex:1 1 190px;min-width:0;color:var(--text)}
+  .addr .btn{flex:none}
+
+  .steps{counter-reset:step;margin:20px 0 0;padding:0;list-style:none}
+  .steps li{counter-increment:step;position:relative;padding:0 0 18px 36px}
+  .steps li::before{content:counter(step);position:absolute;left:0;top:1px;width:24px;height:24px;
+    border-radius:50%;display:grid;place-items:center;font:500 11px/1 var(--mono);
+    background:var(--surface-2);border:1px solid var(--line);color:var(--text-2)}
+  /* Вертикаль от кружка к кружку: шаги читаются как одна дорожка. */
+  .steps li:not(:last-child)::after{content:"";position:absolute;left:11.5px;top:29px;bottom:9px;
+    width:1px;background:var(--line-soft)}
+  .steps li:last-child{padding-bottom:0}
+  .steps b{display:block;font-weight:600;font-size:16px;margin-bottom:4px;letter-spacing:-.015em}
+  .steps p{margin:0;color:var(--text-2);font-size:14.5px}
+
+  .alert{border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;margin-top:14px;
+    border:1px solid var(--line);background:var(--surface-2);color:var(--text-2)}
+  .alert.bad{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent);
+    background:color-mix(in srgb,var(--danger) 9%,var(--surface-2))}
+  .alert.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent);
+    background:color-mix(in srgb,var(--ok) 9%,var(--surface-2));margin-top:0}
+  .muted{color:var(--text-3);font-size:14.5px;line-height:1.5}
+
+  /* Инструкция приезжает с сервера готовым HTML — стили её содержимого здесь. */
+  .howto h2{font:600 16px/1.35 var(--sans);text-transform:none;letter-spacing:-.02em;color:var(--text);margin:0 0 10px}
+  .howto h3{font-size:15px;margin:20px 0 8px;font-weight:600}
+  .howto p{margin:0 0 11px;color:var(--text-2)}
+  .howto ol,.howto ul{margin:0 0 12px;padding-left:20px;color:var(--text-2)}
+  .howto li{margin:6px 0}
+  .howto code{font:400 13px/1.45 var(--mono);background:var(--ground-2);border:1px solid var(--line);
+    border-radius:5px;padding:2px 6px;word-break:break-all;color:var(--text)}
+  .howto pre{background:var(--ground-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:13px;overflow-x:auto}
+  .howto pre code{border:0;background:none;padding:0}
+  .howto blockquote{margin:12px 0;padding:8px 0 8px 14px;border-left:3px solid var(--line);color:var(--text-3)}
+  .howto img{max-width:100%;border-radius:var(--radius-sm);border:1px solid var(--line)}
+
+  .foot{margin-top:32px;text-align:center;font-size:14.5px;color:var(--text-3)}
+  .foot a{color:var(--direct);text-decoration:underline;text-underline-offset:2px}
+
+  .skeleton{display:block;height:32px;width:55%;border-radius:7px;background:var(--surface-2);
+    animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:.9}}
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="var(--surface-2)" stroke="var(--line)"/>
+      <path d="M5 16h7" stroke="var(--direct)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M20 16h7" stroke="var(--managed)" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.5" fill="var(--managed)"/>
+    </svg>
+    <div>
+      <div class="brand" id="brand">Мои устройства</div>
+      <div class="brand-sub">личная страница</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="state-pill" hidden></span>
+  </header>
+
+  <section class="card" id="hero" aria-busy="true">
+    <h1 id="who"><span class="skeleton"></span></h1>
+    <p class="sub" id="hero-sub">Загружаем вашу подписку…</p>
+    <dl class="facts" id="facts" hidden>
+      <div class="fact ok">
+        <span class="fact-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16"
+          rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+        <div class="fact-main"><dt>Действует</dt><dd id="f-expires">—</dd></div>
+      </div>
+      <div class="fact ok">
+        <span class="fact-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-7 4 14L16 12h5"/></svg></span>
+        <div class="fact-main"><dt>Запросы</dt><dd id="f-queries">—</dd></div>
+      </div>
+      <div class="fact ok">
+        <span class="fact-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="13" height="9.5"
+          rx="2"/><path d="M6 19h6"/><rect x="17" y="9.5" width="4.5" height="10" rx="1.5"/></svg></span>
+        <div class="fact-main"><dt>Устройства</dt><dd id="f-devices">—</dd></div>
+      </div>
+    </dl>
+    <button class="btn primary lg block" id="cta" style="margin-top:20px" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      Настроить устройство
+    </button>
+    <p class="muted" id="cta-hint" style="margin:10px 0 0;text-align:center" hidden></p>
+  </section>
+
+  <section class="card" id="devices-card" hidden>
+    <h2>Устройства</h2>
+    <div id="devices"></div>
+  </section>
+
+  <div class="card" id="error-card" hidden><div class="alert bad" id="error-text" role="alert"></div></div>
+
+  <p class="foot" id="support" hidden></p>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1" hidden>
+  <div class="sheet-head">
+    <div class="grabber"></div>
+    <h3 id="sheet-title"></h3>
+    <div class="spacer"></div>
+    <button class="btn ghost icon-btn" id="sheet-close" aria-label="Закрыть">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+  </div>
+  <div class="sheet-body" id="sheet-body"></div>
+  <div class="sheet-foot" id="sheet-foot"></div>
+</div>
+
+<script>
+(function(){
+  var base = location.pathname.replace(/\/+$/, "");
+  var $ = function(id){ return document.getElementById(id); };
+  var state = null, lastSig = null, blocked = "";
+
+  // Платформы, а не типы профилей: человек знает «у меня айфон», а не
+  // «apple_doh». Порядок — по частоте, не по алфавиту.
+  var PLATFORMS = [
+    { key:"ios",     type:"apple_doh",   label:"iPhone или iPad", hint:"профиль DNS",    icon:"apple"   },
+    { key:"mac",     type:"apple_doh",   label:"Mac",             hint:"профиль DNS",    icon:"apple"   },
+    { key:"android", type:"android_dot", label:"Android",         hint:"Private DNS",    icon:"android" },
+    { key:"windows", type:"windows_doh", label:"Windows 11",      hint:"защищённый DNS", icon:"windows" },
+    { key:"router",  type:"router",      label:"Роутер",          hint:"весь дом сразу", icon:"router"  }
+  ];
+
+  var ICONS = {
+    apple:'<path d="M16.7 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.8-3.6.8-.7 0-1.9-.8-3.1-.8-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.2 1.7 2.4 3 2.4 1.2 0 1.7-.8 3.1-.8 1.4 0 1.9.8 3.1.8 1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7-.1 0-2.6-1-2.6-4z"/><path d="M14.5 5.8c.7-.8 1.1-1.9 1-3-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.5z"/>',
+    android:'<path d="M6 10.5v6.2a1.3 1.3 0 0 0 1.3 1.3h9.4a1.3 1.3 0 0 0 1.3-1.3v-6.2z"/><path d="M4 11v4.5M20 11v4.5" stroke-linecap="round"/><path d="M9 18v2.2M15 18v2.2" stroke-linecap="round"/><path d="M8.5 7.2 7.3 5.4M15.5 7.2l1.2-1.8" stroke-linecap="round"/><path d="M6 10.5a6 6 0 0 1 12 0"/><path d="M10 8.6h.01M14 8.6h.01" stroke-linecap="round"/>',
+    windows:'<path d="M3.5 6.6 10.4 5.6v6.1H3.5z"/><path d="M11.8 5.4 20.5 4v7.7h-8.7z"/><path d="M3.5 12.9h6.9V19L3.5 18z"/><path d="M11.8 13h8.7v7l-8.7-1.3z"/>',
+    router:'<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h4" stroke-linecap="round"/><path d="M8.5 9.5a5 5 0 0 1 7 0M6 7a8.5 8.5 0 0 1 12 0" stroke-linecap="round"/>',
+    dns:'<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4c2.2 2.3 3.4 5.1 3.4 8S14.2 17.7 12 20c-2.2-2.3-3.4-5.1-3.4-8S9.8 6.3 12 4z"/>'
+  };
+  function icon(name){
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+      'stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || ICONS.dns) + '</svg>';
+  }
+  function platformOf(type){
+    for (var i = 0; i < PLATFORMS.length; i++){ if (PLATFORMS[i].type === type) return PLATFORMS[i]; }
+    return { label: type, icon: "dns" };
+  }
+
+  function api(path, opts){
+    return fetch(base + path, opts).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(b){
+        return { ok: r.ok, status: r.status, body: b };
+      });
+    });
+  }
+  // Экранируем и кавычки: имя устройства подставляется в атрибуты (aria-label,
+  // value), и одна кавычка в имени раньше рвала разметку кнопки — вместе с
+  // её data-атрибутом, из-за чего кнопка переставала нажиматься.
+  function esc(s){
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : s;
+    return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  var coarse = window.matchMedia ? matchMedia("(pointer:coarse)").matches : false;
+  function nfmt(n){ return (n || 0).toLocaleString("ru-RU"); }
+  // Русский счёт: 1 запрос, 2 запроса, 5 запросов.
+  function plural(n, one, few, many){
+    var a = Math.abs(n) % 100, b = a % 10;
+    return a > 10 && a < 20 ? many : b > 1 && b < 5 ? few : b === 1 ? one : many;
+  }
+
+  function when(ms){
+    if(!ms) return "ещё не подключалось";
+    var d = (Date.now() - new Date(ms).getTime()) / 1000;
+    if(d < 300) return "активно сейчас";
+    if(d < 3600) return Math.round(d/60) + " мин назад";
+    if(d < 86400) return Math.round(d/3600) + " ч назад";
+    return Math.round(d/86400) + " дн назад";
+  }
+  function dateFmt(iso){
+    return new Date(iso).toLocaleDateString("ru-RU", { day:"numeric", month:"long", year:"numeric" });
+  }
+
+  /* --- лист снизу на телефоне, окно на десктопе -----------------------------
+     Один элемент на все случаи: содержимое подставляется. Фокус запирается
+     внутри, Esc и клик по фону закрывают, после закрытия фокус возвращается
+     туда, откуда открыли. */
+  var sheetPrev = null, sheetOpen = false, sheetAt = 0;
+
+  function openSheet(title, bodyHTML, footHTML){
+    if(!sheetOpen) sheetPrev = document.activeElement;
+    sheetAt = Date.now();
+    $("sheet-title").textContent = title;
+    $("sheet-body").innerHTML = bodyHTML;
+    $("sheet-foot").innerHTML = footHTML || "";
+    $("sheet-foot").hidden = !footHTML;
+    $("scrim").hidden = false; $("sheet").hidden = false;
+    document.body.style.overflow = "hidden";
+    sheetOpen = true;
+    requestAnimationFrame(function(){
+      $("scrim").classList.add("on"); $("sheet").classList.add("on");
+      // На сенсорном экране фокус в поле поднимает клавиатуру, а она закрывает
+      // нижнюю панель с кнопками. Поэтому там фокусируем сам лист.
+      if(coarse){ $("sheet").focus(); return; }
+      var f = $("sheet-body").querySelector("button,input,a[href]");
+      (f || $("sheet-close")).focus();
+    });
+  }
+  function closeSheet(){
+    if(!sheetOpen) return;
+    sheetOpen = false;
+    $("scrim").classList.remove("on"); $("sheet").classList.remove("on");
+    document.body.style.overflow = "";
+    setTimeout(function(){
+      if(sheetOpen) return;
+      $("scrim").hidden = true; $("sheet").hidden = true;
+      $("sheet-body").innerHTML = ""; $("sheet-foot").innerHTML = "";
+    }, 260);
+    // Список мог перерисоваться, пока лист был открыт: возвращать фокус
+    // в выброшенный из документа элемент бессмысленно.
+    if(sheetPrev && sheetPrev.isConnected && sheetPrev.focus) sheetPrev.focus();
+  }
+  // Одно делегирование на весь лист вместо навешивания обработчиков после
+  // каждой перерисовки: содержимое меняется на каждом шаге, и потерянный
+  // обработчик выглядел как «кнопка не нажимается».
+  // Клик, доехавший сразу после открытия, — эхо того тапа, которым лист и
+  // открыли: браузер шлёт его через ~300 мс после отпускания пальца, а к тому
+  // моменту под пальцем уже другая кнопка.
+  function echo(){ return Date.now() - sheetAt < 300; }
+  $("sheet").addEventListener("click", function(e){
+    if(echo()) return;
+    var t = e.target.closest("[data-close],[data-back],[data-plat]");
+    if(!t) return;
+    if(t.hasAttribute("data-plat")){ installStep2(PLATFORMS[+t.getAttribute("data-plat")]); return; }
+    if(t.hasAttribute("data-back")){ installStep1(); return; }
+    closeSheet();
+  });
+  $("sheet-close").setAttribute("data-close", "");
+  $("scrim").onclick = closeSheet;
+  document.addEventListener("keydown", function(e){
+    if(!sheetOpen) return;
+    if(e.key === "Escape"){ closeSheet(); return; }
+    if(e.key !== "Tab") return;
+    var f = $("sheet").querySelectorAll('button:not([disabled]),input,a[href]');
+    if(!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  });
+
+  // Экранная клавиатура не двигает position:fixed — лист с кнопками уезжает
+  // под неё. visualViewport говорит, сколько экрана она съела.
+  if(window.visualViewport){
+    var vv = window.visualViewport;
+    var syncKB = function(){
+      var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty("--kb", (kb > 80 ? kb : 0) + "px");
+    };
+    vv.addEventListener("resize", syncKB);
+    vv.addEventListener("scroll", syncKB);
+  }
+
+  /* --- главный экран -------------------------------------------------------- */
+  function render(){
+    var s = state;
+    $("hero").setAttribute("aria-busy", "false");
+    if(s.brand){ $("brand").textContent = s.brand; document.title = s.brand; }
+    $("who").textContent = s.name || "Мои устройства";
+
+    var reason = s.enabled === false ? "доступ отключён"
+      : (s.expires_at && new Date(s.expires_at) < new Date()) ? "срок закончился"
+      : "исчерпан лимит запросов";
+    $("state-pill").className = "pill " + (s.active ? "ok" : "bad");
+    $("state-pill").innerHTML = '<span class="dot"></span>' + (s.active ? "активна" : esc(reason));
+    $("state-pill").hidden = false;
+
+    var devs = s.devices || [];
+    $("hero-sub").textContent = s.active
+      ? (devs.length ? "Подписка работает. Ниже — что у вас настроено."
+                     : "Подписка работает. Настройте первое устройство — это займёт минуту.")
+      : "Подписка не действует: " + reason + ". Устройства не отвечают, пока она не возобновлена.";
+
+    $("f-expires").textContent = s.expires_at ? dateFmt(s.expires_at) : "Бессрочно";
+    $("f-queries").innerHTML = s.query_limit
+      ? nfmt(s.queries_used) + "<small>из " + nfmt(s.query_limit) + "</small>"
+      : nfmt(s.queries_used) + "<small>без ограничения</small>";
+    $("f-devices").textContent = devs.length + " из " + s.device_limit;
+
+    var days = s.expires_at ? (new Date(s.expires_at) - Date.now()) / 86400000 : Infinity;
+    var used = s.query_limit ? s.queries_used / s.query_limit : 0;
+    mark("f-expires", days < 0 ? "bad" : days < 7 ? "warn" : "ok");
+    mark("f-queries", used >= 1 ? "bad" : used >= .8 ? "warn" : "ok");
+    mark("f-devices", devs.length >= s.device_limit ? "warn" : "ok");
+    $("facts").hidden = false;
+
+    // Кнопку не гасим: серая кнопка, которая «не нажимается», неотличима от
+    // поломки. Она открывает лист и там объясняет, почему сейчас нельзя.
+    var full = devs.length >= s.device_limit;
+    blocked = !s.active
+      ? "Подписка сейчас не действует: " + reason + ". Пока она не возобновлена, новые устройства не добавляются."
+      : full ? "Устройств уже " + devs.length + " из " + s.device_limit
+             + ". Удалите ненужное в списке ниже — и место освободится." : "";
+    $("cta").hidden = false;
+    $("cta-hint").hidden = !blocked;
+    $("cta-hint").textContent = blocked;
+
+    // Список перерисовывается только при смене состава: иначе автообновление
+    // раз в 30 секунд дёргало бы DOM под руками у человека.
+    var sig = devs.map(function(d){ return d.id + ":" + d.name + ":" + d.type; }).join("|");
+    if(sig !== lastSig){
+      lastSig = sig;
+      $("devices").innerHTML = devs.length ? devs.map(function(d){
+        var p = platformOf(d.type);
+        return '<div class="dev">'
+          + '<div class="dev-ico">' + icon(p.icon) + '</div>'
+          + '<div class="dev-main">'
+          +   '<div class="dev-name">' + esc(d.name) + '</div>'
+          +   '<div class="dev-meta" id="meta-' + d.id + '">' + meta(d) + '</div>'
+          + '</div>'
+          + '<div class="dev-acts">'
+          +   '<button class="btn sm" type="button" data-how="' + d.id + '">Как настроить</button>'
+          +   '<button class="btn sm ghost danger icon-btn" type="button" data-del="' + d.id + '" aria-label="Удалить ' + esc(d.name) + '">'
+          +     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">'
+          +     '<path d="M4 7h16M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/>'
+          +     '<path d="M6.5 7 7 19a1.5 1.5 0 0 0 1.5 1.4h7A1.5 1.5 0 0 0 17 19l.5-12"/></svg>'
+          +   '</button>'
+          + '</div>'
+          + '</div>';
+      }).join("") : '<p class="empty">Пока ни одного. Нажмите «Настроить устройство» — это займёт минуту.</p>';
+
+    } else {
+      devs.forEach(function(d){ var el = $("meta-" + d.id); if(el) el.innerHTML = meta(d); });
+    }
+    $("devices-card").hidden = false;
+  }
+
+  $("devices").addEventListener("click", function(e){
+    var b = e.target.closest("[data-how],[data-del]");
+    if(!b) return;
+    if(b.hasAttribute("data-del")) askDelete(b.getAttribute("data-del"));
+    else showHowto(b.getAttribute("data-how"));
+  });
+
+  // Класс живёт на плитке, а значение лежит на два уровня глубже.
+  function mark(id, cls){
+    var el = $(id) && $(id).closest(".fact");
+    if (el) el.className = "fact " + cls;
+  }
+
+  function meta(d){
+    var p = platformOf(d.type);
+    var seen = when(d.last_seen_at);
+    var seenHTML = seen === "активно сейчас" ? '<span class="live">' + seen + '</span>' : esc(seen);
+    return esc(p.label) + ' · ' + seenHTML
+      + (d.queries_total ? ' · ' + nfmt(d.queries_total) + ' '
+          + plural(d.queries_total, 'запрос', 'запроса', 'запросов') : '');
+  }
+
+  function fail(msg){
+    $("error-text").textContent = msg;
+    $("error-card").hidden = false;
+    $("hero").setAttribute("aria-busy", "false");
+    $("who").textContent = "Не удалось открыть страницу";
+    $("hero-sub").textContent = "";
+  }
+
+  function load(){
+    return api("/api/status").then(function(r){
+      if(!r.ok){
+        fail(r.status === 404 ? "Ссылка не найдена. Проверьте адрес или попросите новую."
+                              : (r.body.error || "Не удалось загрузить данные."));
+        return;
+      }
+      state = r.body; $("error-card").hidden = true; render(); support(state);
+    }).catch(function(){ fail("Нет связи с сервером."); });
+  }
+
+  function support(s){
+    var sup = (s.support || "").trim();
+    if(!sup) return;
+    var href = /^https?:\/\//.test(sup) ? sup : sup.charAt(0) === "@" ? "https://t.me/" + sup.slice(1) : "";
+    $("support").innerHTML = "Нужна помощь? " + (href
+      ? '<a href="' + esc(href) + '" rel="noopener noreferrer">' + esc(sup) + '</a>' : esc(sup));
+    $("support").hidden = false;
+  }
+
+  /* --- установка: платформа → имя → готовый адрес --------------------------- */
+  $("cta").onclick = function(){ installStep1(); };
+
+  function installStep1(){
+    if(blocked){
+      openSheet("Сейчас нельзя добавить устройство",
+        '<p style="margin:0">' + esc(blocked) + '</p>',
+        '<button class="btn primary" type="button" data-close>Понятно</button>');
+      return;
+    }
+    var body = '<p class="muted" style="margin:0 0 14px">Выберите, куда ставим. Адрес будет личным для этого устройства.</p>'
+      + '<div class="plats">' + PLATFORMS.map(function(p, i){
+          return '<button class="plat" type="button" data-plat="' + i + '">'
+            + icon(p.icon) + '<span>' + esc(p.label) + '<small>' + esc(p.hint) + '</small></span></button>';
+        }).join("") + '</div>';
+    openSheet("Настроить устройство", body, '<button class="btn" type="button" data-close>Отмена</button>');
+  }
+
+  function installStep2(p){
+    var body = '<div class="plat" aria-pressed="true" style="margin-bottom:16px">'
+        + icon(p.icon) + '<span>' + esc(p.label) + '<small>' + esc(p.hint) + '</small></span></div>'
+      + '<label for="dname">Название устройства</label>'
+      + '<input type="text" id="dname" maxlength="60" value="' + esc(p.label) + '" autocomplete="off">'
+      + '<p class="muted" style="margin:8px 0 0">Чтобы вы узнали его в списке — например «Рабочий ноутбук».</p>'
+      + '<div id="install-msg"></div>';
+    openSheet("Настроить устройство", body,
+      '<button class="btn" type="button" data-back>Назад</button>'
+      + '<button class="btn primary" type="button" id="do-add">Получить настройку</button>');
+    var input = $("dname");
+    if(!coarse){ input.focus(); input.select(); }
+    input.onkeydown = function(e){ if(e.key === "Enter"){ e.preventDefault(); add(); } };
+    $("do-add").onclick = add;
+
+    function msg(html){ var m = $("install-msg"); if(m) m.innerHTML = html; }
+    function add(){
+      if(echo()) return;
+      var name = input.value.trim();
+      if(!name){ msg('<div class="alert bad">Укажите название устройства.</div>'); input.focus(); return; }
+      var btn = $("do-add");
+      btn.disabled = true; btn.textContent = "Создаём…";
+      api("/api/devices", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, type: p.type })
+      }).then(function(r){
+        btn.disabled = false; btn.textContent = "Получить настройку";
+        if(!r.ok){
+          msg('<div class="alert bad">' + esc(r.body.message || r.body.error || "Не удалось добавить устройство.") + '</div>');
+          return;
+        }
+        load();
+        installStep3(p, r.body.device);
+      }).catch(function(){
+        btn.disabled = false; btn.textContent = "Получить настройку";
+        msg('<div class="alert bad">Нет связи с сервером.</div>');
+      });
+    }
+  }
+
+  function installStep3(p, dev){
+    var apple = p.type === "apple_doh" || p.type === "apple_dot";
+    var addr = p.type === "android_dot" ? (dev.dot_host || "") : (dev.doh_url || "");
+    var steps = apple ? [
+        ["Скачайте профиль", "Кнопка ниже. Файл откроется в настройках устройства."],
+        ["Установите его", p.key === "mac"
+          ? "Системные настройки → Основные → VPN и управление устройством → установить профиль."
+          : "Настройки → Профиль загружен → Установить, затем введите код-пароль."],
+        ["Проверьте", "Через минуту откройте нужный сервис. Больше ничего настраивать не нужно."]
+      ] : p.type === "android_dot" ? [
+        ["Скопируйте адрес", "Нажмите «Копировать» рядом с адресом."],
+        ["Настройки → Сеть и интернет → Частный DNS", "Выберите «Имя хоста провайдера частного DNS» и вставьте адрес."],
+        ["Сохраните", "Значок сети моргнёт — это нормально. Через минуту всё работает."]
+      ] : p.type === "windows_doh" ? [
+        ["Скопируйте адрес", "Нажмите «Копировать» рядом с адресом."],
+        ["Параметры → Сеть → свойства подключения", "Назначение DNS-серверов → Изменить → Вручную, включите шифрование DNS и вставьте адрес."],
+        ["Сохраните", "Проверьте, открыв нужный сервис."]
+      ] : [
+        ["Скопируйте адрес", "Нажмите «Копировать» рядом с адресом."],
+        ["Пропишите его в роутере", "Точные шаги для вашей прошивки — кнопка «Как настроить» в списке устройств."],
+        ["Проверьте", "После применения переподключите Wi-Fi на телефоне."]
+      ];
+
+    var body = '<div class="alert ok" role="status">Устройство «' + esc(dev.name)
+        + '» создано. Доступ включается в течение минуты.</div>'
+      + (addr ? '<div class="addr"><code id="addr">' + esc(addr) + '</code>'
+          + '<button class="btn sm" type="button" id="copy">Копировать</button></div>' : '')
+      + '<ol class="steps">' + steps.map(function(s){
+          return '<li><b>' + esc(s[0]) + '</b><p>' + esc(s[1]) + '</p></li>';
+        }).join("") + '</ol>';
+
+    var foot = apple
+      ? '<button class="btn" type="button" data-close>Позже</button>'
+        + '<a class="btn primary" href="' + base + '/api/devices/' + dev.id + '/config">Скачать профиль</a>'
+      : '<button class="btn primary" type="button" data-close>Готово</button>';
+    openSheet("Почти готово", body, foot);
+
+    var copy = $("copy");
+    if(copy) copy.onclick = function(){
+      var text = $("addr").textContent;
+      var done = function(){
+        copy.textContent = "Скопировано";
+        setTimeout(function(){ if(copy) copy.textContent = "Копировать"; }, 1800);
+      };
+      // navigator.clipboard есть только в защищённом контексте: по https или на
+      // localhost. Если страница открыта из локальной сети по http, остаётся
+      // старый execCommand.
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else fallback();
+      function fallback(){
+        var t = document.createElement("textarea");
+        t.value = text;
+        t.setAttribute("readonly", "");
+        t.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+        document.body.appendChild(t);
+        t.select(); t.setSelectionRange(0, text.length);
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch(e){ ok = false; }
+        document.body.removeChild(t);
+        if(ok) done();
+        else { copy.textContent = "Скопируйте вручную"; setTimeout(function(){ copy.textContent = "Копировать"; }, 2500); }
+      }
+    };
+  }
+
+  /* --- инструкция и удаление ------------------------------------------------ */
+  var howtoCache = {};
+  function showHowto(id){
+    var dev = (state.devices || []).filter(function(d){ return d.id === id; })[0] || {};
+    var apple = dev.type === "apple_doh" || dev.type === "apple_dot";
+    var foot = '<button class="btn" type="button" data-close>Закрыть</button>'
+      + (apple ? '<a class="btn primary" href="' + base + '/api/devices/' + id + '/config">Скачать профиль</a>' : '');
+    openSheet(dev.name || "Как настроить", '<p class="muted">Загружаем инструкцию…</p>', foot);
+
+    var key = id + ":" + ((state && state.instructions_version) || "");
+    if(howtoCache[key]){ $("sheet-body").innerHTML = '<div class="howto">' + howtoCache[key] + '</div>'; return; }
+    api("/api/devices/" + id + "/instructions").then(function(r){
+      if(!sheetOpen) return;
+      if(!r.ok){
+        $("sheet-body").innerHTML = '<div class="alert bad">Инструкция сейчас недоступна. Попробуйте позже.</div>';
+        return;
+      }
+      howtoCache[key] = r.body.html;
+      $("sheet-body").innerHTML = '<div class="howto">' + r.body.html + '</div>';
+    }).catch(function(){
+      if(sheetOpen) $("sheet-body").innerHTML = '<div class="alert bad">Нет связи с сервером.</div>';
+    });
+  }
+
+  function askDelete(id){
+    var dev = (state.devices || []).filter(function(d){ return d.id === id; })[0] || {};
+    openSheet("Удалить устройство?",
+      '<p style="margin:0">«' + esc(dev.name) + '» перестанет работать в течение минуты. '
+      + 'Профиль на самом устройстве останется, но доступа больше не даст.</p><div id="del-msg"></div>',
+      '<button class="btn" type="button" data-close>Отмена</button>'
+      + '<button class="btn danger" type="button" id="do-del">Удалить</button>');
+    $("do-del").onclick = function(){
+      if(echo()) return;
+      var b = $("do-del");
+      b.disabled = true; b.textContent = "Удаляем…";
+      api("/api/devices/" + id, { method: "DELETE" }).then(function(r){
+        if(!r.ok){
+          b.disabled = false; b.textContent = "Удалить";
+          $("del-msg").innerHTML = '<div class="alert bad">'
+            + esc(r.body.message || r.body.error || "Не удалось удалить устройство.") + '</div>';
+          return;
+        }
+        closeSheet(); load();
+      }).catch(function(){
+        b.disabled = false; b.textContent = "Удалить";
+        $("del-msg").innerHTML = '<div class="alert bad">Нет связи с сервером.</div>';
+      });
+    };
+  }
+
+  load();
+  // Пока открыт лист, страницу не трогаем: человек в этот момент читает.
+  setInterval(function(){ if(!sheetOpen) load(); }, 30000);
+})();
+</script>
+</body>
+</html>

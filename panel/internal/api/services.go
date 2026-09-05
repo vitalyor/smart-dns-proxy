@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
 
+	"smartdns/panel/internal/rules"
 	"smartdns/panel/internal/store"
 )
 
@@ -21,11 +23,15 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 		// True when a probe hostname is set but is not among the service's managed
 		// domains — such a probe hits the SNI proxy as "unmanaged" and always fails.
 		ProbeInSet bool `db:"probe_in_set" json:"probe_in_set"`
+		// Domains are the service's own hand-entered list, surfaced so the service
+		// window can edit them directly — no separate "lists" page.
+		Domains []string `db:"domains" json:"domains"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
 		SELECT sv.*, rs.name AS rule_set_name, ig.name AS ingress_group_name, eg.name AS egress_group_name,
 		       (SELECT count(*)::int FROM rule_entries re WHERE re.version_id = rs.active_version_id) AS rule_count,
 		       rsv.content_hash AS rule_set_hash,
+		       COALESCE(rs.manual_include, '{}') AS domains,
 		       COALESCE(sv.probe->>'hostname','') = '' OR EXISTS(
 		         SELECT 1 FROM rule_entries re
 		         WHERE re.version_id = rs.active_version_id AND re.value = sv.probe->>'hostname') AS probe_in_set
@@ -58,6 +64,19 @@ type serviceRequest struct {
 	Probe          map[string]any `json:"probe"`
 }
 
+// checkUDPMode accepts only what the data plane actually implements. proxy и
+// separate_ip остались в схеме от задуманного UDP-прокси, которого в нодах нет:
+// принимать их значило бы обещать поведение, которого не будет.
+func checkUDPMode(m *string) error {
+	if m == nil || *m == "" {
+		return nil
+	}
+	if *m != "disabled_fallback" {
+		return badRequest("режим UDP %q пока не поддерживается нодами: доступен только disabled_fallback", *m)
+	}
+	return nil
+}
+
 func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	var req serviceRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -71,7 +90,7 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("укажите название сервиса")
 	}
 	if !slugRe.MatchString(req.Slug) {
-		return badRequest("slug должен состоять из строчных латинских букв, цифр и дефисов")
+		return badRequest("Идентификатор строится из названия и может содержать только латиницу, цифры и дефисы — задайте название латиницей")
 	}
 	if req.DNSTTL == 0 {
 		req.DNSTTL = 60
@@ -88,8 +107,8 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	if req.UDPMode == "" {
 		req.UDPMode = "disabled_fallback"
 	}
-	if !contains([]string{"disabled_fallback", "proxy", "separate_ip"}, req.UDPMode) {
-		return badRequest("недопустимый режим UDP")
+	if err := checkUDPMode(&req.UDPMode); err != nil {
+		return err
 	}
 	if req.Probe == nil {
 		req.Probe = map[string]any{}
@@ -133,6 +152,9 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	if req.DNSTTL != nil && (*req.DNSTTL < 30 || *req.DNSTTL > 300) {
 		return badRequest("TTL должен быть в диапазоне 30–300 секунд")
 	}
+	if err := checkUDPMode(req.UDPMode); err != nil {
+		return err
+	}
 	ver, err := ifMatch(r)
 	if err != nil {
 		return err
@@ -165,6 +187,192 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// ensureServiceRuleSet returns the id of the service's private domain store,
+// creating one on first use. The rule set is a 1:1 backing store the operator
+// never sees directly — they edit "the service's domains" and "the service's
+// auto-update sources", and this is where both live.
+func (s *Server) ensureServiceRuleSet(ctx context.Context, sv *store.Service) (string, error) {
+	if sv.RuleSetID != nil && *sv.RuleSetID != "" {
+		return *sv.RuleSetID, nil
+	}
+	rs, err := store.One[store.RuleSet](ctx, s.DB, `
+		INSERT INTO rule_sets (name, description, update_mode, interval_sec, allow_regex, priority, manual_include, manual_exclude)
+		VALUES ($1,$2,'manual_only',21600,false,100,'{}','{}') RETURNING *`,
+		sv.Name, "Домены сервиса "+sv.Name)
+	if err != nil {
+		return "", err
+	}
+	if _, err := s.DB.Exec(ctx, `UPDATE services SET rule_set_id=$2 WHERE id=$1`, sv.ID, rs.ID); err != nil {
+		return "", err
+	}
+	sv.RuleSetID = &rs.ID
+	return rs.ID, nil
+}
+
+// rebuildActivate rebuilds a service's domain set and activates the result at
+// once. Unlike shared lists, a service has no approval step — the operator's own
+// edits (typed domains, added sources) take effect immediately after a rebuild.
+func (s *Server) rebuildActivate(ctx context.Context, rsID string) (*rules.BuildResult, error) {
+	res, err := s.builder().Build(ctx, rsID)
+	if err != nil {
+		return nil, errorf(http.StatusBadGateway, "build_failed", "не удалось собрать домены: %v", err)
+	}
+	if !res.Unchanged && res.Status != "active" && res.VersionID != "" {
+		if err := s.builder().Approve(ctx, rsID, res.VersionID); err != nil {
+			return nil, err
+		}
+		res.Status = "active"
+	}
+	return res, nil
+}
+
+// setServiceDomains replaces a service's own hand-typed domain list and rebuilds.
+func (s *Server) setServiceDomains(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Domains []string `json:"domains"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	domains := cleanLines(req.Domains)
+	rsID, err := s.ensureServiceRuleSet(ctx, &sv)
+	if err != nil {
+		return err
+	}
+	if _, err := s.DB.Exec(ctx, `UPDATE rule_sets SET manual_include=$2, updated_at=now() WHERE id=$1`,
+		rsID, nonNil(domains)); err != nil {
+		return err
+	}
+	res, err := s.rebuildActivate(ctx, rsID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.domains", "service", sv.ID, nil, map[string]any{"count": len(domains)})
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(domains), "build": res})
+	return nil
+}
+
+// listServiceSources returns the auto-update sources behind a service and their
+// last fetch outcome, so the service window can show and manage them. A service
+// with no rule set yet simply has no sources.
+func (s *Server) listServiceSources(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if sv.RuleSetID == nil || *sv.RuleSetID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"sources": []any{}, "fetches": []any{}})
+		return nil
+	}
+	rsID := *sv.RuleSetID
+	sources, err := store.Many[store.RuleSource](ctx, s.DB,
+		`SELECT * FROM rule_sources WHERE rule_set_id=$1 ORDER BY created_at`, rsID)
+	if err != nil {
+		return err
+	}
+	type fetchRow struct {
+		SourceID  string `db:"source_id" json:"source_id"`
+		Status    string `db:"status" json:"status"`
+		Entries   int    `db:"entries" json:"entries"`
+		Error     string `db:"error" json:"error"`
+		StartedAt string `db:"started_at" json:"started_at"`
+	}
+	fetches, _ := store.Many[fetchRow](ctx, s.DB, `
+		SELECT source_id::text, status, entries, error, started_at::text
+		FROM rule_fetches WHERE source_id IN (SELECT id FROM rule_sources WHERE rule_set_id=$1)
+		ORDER BY started_at DESC LIMIT 30`, rsID)
+	writeJSON(w, http.StatusOK, map[string]any{"sources": sources, "fetches": fetches})
+	return nil
+}
+
+// addServiceSource attaches an auto-update source to a service and rebuilds so
+// its domains are pulled in immediately.
+func (s *Server) addServiceSource(w http.ResponseWriter, r *http.Request) error {
+	var req sourceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	if err := validateSource(&req); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	rsID, err := s.ensureServiceRuleSet(ctx, &sv)
+	if err != nil {
+		return err
+	}
+	src, err := store.One[store.RuleSource](ctx, s.DB, `
+		INSERT INTO rule_sources (rule_set_id, name, type, url, repo, ref, path, mode, expected_sha256, enabled)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true) RETURNING *`,
+		rsID, req.Name, req.Type, req.URL, req.Repo, req.Ref, req.Path, req.Mode, req.ExpectedSHA256)
+	if err != nil {
+		return err
+	}
+	res, err := s.rebuildActivate(ctx, rsID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.source.added", "service", sv.ID, nil, src)
+	writeJSON(w, http.StatusCreated, map[string]any{"source": src, "build": res})
+	return nil
+}
+
+func (s *Server) deleteServiceSource(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if sv.RuleSetID == nil || *sv.RuleSetID == "" {
+		return notFound("source")
+	}
+	n, err := s.DB.ExecN(ctx, `DELETE FROM rule_sources WHERE id=$1 AND rule_set_id=$2`,
+		r.PathValue("source_id"), *sv.RuleSetID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return notFound("source")
+	}
+	res, err := s.rebuildActivate(ctx, *sv.RuleSetID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.source.deleted", "service", sv.ID, nil, map[string]any{"source_id": r.PathValue("source_id")})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "build": res})
+	return nil
+}
+
+// refreshService re-pulls every source and activates the result — the "обновить
+// сейчас" button in the service window.
+func (s *Server) refreshService(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	sv, err := store.One[store.Service](ctx, s.DB, `SELECT * FROM services WHERE id=$1`, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if sv.RuleSetID == nil || *sv.RuleSetID == "" {
+		return badRequest("у сервиса пока нет источников для обновления")
+	}
+	res, err := s.rebuildActivate(ctx, *sv.RuleSetID)
+	if err != nil {
+		return err
+	}
+	s.audit(ctx, r, "service.refreshed", "service", sv.ID, nil,
+		map[string]any{"added": res.Added, "removed": res.Removed, "status": res.Status})
+	writeJSON(w, http.StatusOK, map[string]any{"build": res})
+	return nil
+}
+
 func (s *Server) deleteService(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	n, err := s.DB.ExecN(r.Context(), `DELETE FROM services WHERE id=$1`, id)
@@ -179,10 +387,25 @@ func (s *Server) deleteService(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// translitRU maps Cyrillic to latin so a Russian service name still yields a
+// usable slug instead of an empty one (which failed slugRe at the last step).
+var translitRU = map[rune]string{
+	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e",
+	'ж': "zh", 'з': "z", 'и': "i", 'й': "i", 'к': "k", 'л': "l", 'м': "m",
+	'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u",
+	'ф': "f", 'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch",
+	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
+}
+
 func slugify(s string) string {
 	var b strings.Builder
 	prevDash := false
 	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if t, ok := translitRU[r]; ok {
+			b.WriteString(t)
+			prevDash = false
+			continue
+		}
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			b.WriteRune(r)
@@ -194,5 +417,9 @@ func slugify(s string) string {
 			}
 		}
 	}
-	return strings.Trim(b.String(), "-")
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 40 { // slugRe caps at 40 chars; trim a trailing dash left by the cut
+		out = strings.Trim(out[:40], "-")
+	}
+	return out
 }

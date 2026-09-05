@@ -1,0 +1,39 @@
+# Страница подписки. Разворачивается отдельно от панели — хоть рядом на этапе
+# разработки, хоть на другом сервере в проде. Состояния нет: упал контейнер —
+# поднял новый, бэкапить нечего.
+name: smartdns-subpage
+
+services:
+  subscription-page:
+    build:
+      context: ../..
+      dockerfile: subpage/deploy/Dockerfile
+      args:
+        VERSION: ${SMARTDNS_VERSION:-2.0.3}
+    image: smartdns/subscription-page:${SMARTDNS_VERSION:-2.0.3}
+    restart: unless-stopped
+    environment:
+      # Адрес панели. В проде — публичный, на этапе разработки можно соседний контейнер.
+      # Пусто — контейнер сразу падает с понятной ошибкой (проверка в бинарнике),
+      # зато `docker compose build` не требует секретов.
+      PANEL_URL: ${PANEL_URL:-}
+      # Ключ со scope из панели: Страница подписки → Ключи доступа.
+      PANEL_API_KEY: ${PANEL_API_KEY:-}
+      APP_ADDR: ":8080"
+      TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "${SUBPAGE_PORT:-8081}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

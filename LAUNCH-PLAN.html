@@ -1,0 +1,685 @@
+<meta charset="utf-8">
+<title>Запуск SmartDNS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;600&display=swap">
+
+<style>
+/* Наследует палитру самой панели: янтарный — трафик, который мы уводим через
+   свою инфраструктуру, бирюзовый — трафик, который идёт напрямую.
+   Данные (адреса, порты, хеши) всегда моноширинные. */
+:root {
+  --ground: #0d1220;
+  --ground-2: #101728;
+  --surface: #151d31;
+  --surface-2: #1b2439;
+  --line: #253150;
+  --line-soft: #1c2540;
+  --text: #e6ebf5;
+  --text-2: #9aa8c4;
+  --text-3: #7d8ba7;
+  --managed: #f2a33c;
+  --managed-dim: #3a2a12;
+  --direct: #4fd1c5;
+  --direct-dim: #16332f;
+  --danger: #ff6b6b;
+  --danger-dim: #3b1a1f;
+  --warn: #ffc86b;
+  --warn-dim: #382c14;
+  --ok: #59d99a;
+  --ok-dim: #143026;
+  --violet: #9d8cff;
+  --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 8px 24px -12px rgb(0 0 0 / .6);
+  --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground: #f4f6fa;
+    --ground-2: #eef1f7;
+    --surface: #ffffff;
+    --surface-2: #f7f9fc;
+    --line: #d3dbe9;
+    --line-soft: #e6ebf3;
+    --text: #131a28;
+    --text-2: #4f5c74;
+    --text-3: #67748c;
+    --managed: #a35f06;
+    --managed-dim: #fbeed6;
+    --direct: #0d7d73;
+    --direct-dim: #d5efec;
+    --danger: #bb3232;
+    --danger-dim: #fadede;
+    --warn: #8a5c00;
+    --warn-dim: #fbeecd;
+    --ok: #127443;
+    --ok-dim: #d6efe1;
+    --violet: #5240bd;
+    --shadow: 0 1px 2px rgb(16 24 40 / .05), 0 10px 28px -18px rgb(16 24 40 / .35);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --ground: #f4f6fa;
+  --ground-2: #eef1f7;
+  --surface: #ffffff;
+  --surface-2: #f7f9fc;
+  --line: #d3dbe9;
+  --line-soft: #e6ebf3;
+  --text: #131a28;
+  --text-2: #4f5c74;
+  --text-3: #67748c;
+  --managed: #a35f06;
+  --managed-dim: #fbeed6;
+  --direct: #0d7d73;
+  --direct-dim: #d5efec;
+  --danger: #bb3232;
+  --danger-dim: #fadede;
+  --warn: #8a5c00;
+  --warn-dim: #fbeecd;
+  --ok: #127443;
+  --ok-dim: #d6efe1;
+  --violet: #5240bd;
+  --shadow: 0 1px 2px rgb(16 24 40 / .05), 0 10px 28px -18px rgb(16 24 40 / .35);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 40px 20px 96px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 600; letter-spacing: -.015em; }
+h1 { font-size: clamp(28px, 4.4vw, 40px); line-height: 1.15; }
+h2 { font-size: clamp(20px, 2.6vw, 25px); line-height: 1.25; }
+h3 { font-size: 16px; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+code {
+  font-size: .88em; background: var(--surface-2); border: 1px solid var(--line-soft);
+  border-radius: 4px; padding: .08em .34em;
+}
+a { color: var(--direct); text-underline-offset: 3px; }
+a:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--managed); outline-offset: 3px; border-radius: 3px;
+}
+
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-3);
+}
+.stack { display: flex; flex-direction: column; }
+.g1 { gap: 8px; } .g2 { gap: 14px; } .g3 { gap: 20px; } .g4 { gap: 32px; } .g5 { gap: 52px; }
+
+/* ---- шапка ---- */
+header.head { display: flex; flex-direction: column; gap: 16px; padding-bottom: 34px; }
+.verdict {
+  display: flex; gap: 14px; align-items: flex-start;
+  border-left: 3px solid var(--managed); background: var(--managed-dim);
+  padding: 14px 18px; border-radius: 0 8px 8px 0; max-width: 74ch;
+}
+.verdict p { color: var(--text); }
+.done-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em;
+  padding: 4px 9px; border-radius: 5px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--text-2);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.chip.ok { border-color: var(--ok); color: var(--ok); background: var(--ok-dim); }
+.chip.wait { border-color: var(--warn); color: var(--warn); background: var(--warn-dim); }
+
+/* ---- секции ---- */
+section { border-top: 1px solid var(--line-soft); padding-top: 30px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.sec-note { font-size: 14px; color: var(--text-2); margin-top: 16px; }
+
+/* ---- карточки хостов ---- */
+.hosts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.host {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.host-top { padding: 16px 18px 14px; border-bottom: 1px solid var(--line-soft); }
+.host-top.ru { background: linear-gradient(180deg, var(--managed-dim), transparent); }
+.host-top.us { background: linear-gradient(180deg, var(--direct-dim), transparent); }
+.host-top.ctl { background: linear-gradient(180deg, color-mix(in srgb, var(--violet) 22%, transparent), transparent); }
+.host-name { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+.host-ip { font-family: var(--mono); font-size: 13px; color: var(--text-2); }
+.role {
+  display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase; padding: 3px 8px; border-radius: 4px;
+}
+.role.ru { background: var(--managed-dim); color: var(--managed); border: 1px solid var(--managed); }
+.role.us { background: var(--direct-dim); color: var(--direct); border: 1px solid var(--direct); }
+.role.ctl { background: color-mix(in srgb, var(--violet) 16%, transparent); color: var(--violet); border: 1px solid var(--violet); }
+
+dl.spec { margin: 0; padding: 6px 18px 16px; display: grid; grid-template-columns: minmax(92px, auto) 1fr; gap: 0; }
+dl.spec dt, dl.spec dd {
+  margin: 0; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px;
+}
+dl.spec dt { color: var(--text-3); padding-right: 14px; }
+dl.spec dd { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+dl.spec dt:last-of-type, dl.spec dd:last-of-type { border-bottom: 0; }
+.v-ok { color: var(--ok); } .v-warn { color: var(--warn); } .v-bad { color: var(--danger); }
+
+/* ---- карта портов (сигнатура) ---- */
+.portmap { display: flex; flex-direction: column; gap: 22px; }
+.pm-host { display: flex; flex-direction: column; gap: 10px; }
+.pm-label { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pm-rail {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+.port {
+  flex: 0 0 auto; min-width: 116px; border-radius: 7px; padding: 9px 11px;
+  border: 1px solid var(--line); background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.port .num { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.port .who { font-size: 11.5px; color: var(--text-3); line-height: 1.35; }
+.port.free { border-color: var(--ok); background: var(--ok-dim); }
+.port.free .num { color: var(--ok); }
+.port.taken { opacity: .82; }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-3); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.dot { width: 9px; height: 9px; border-radius: 2px; border: 1px solid currentColor; }
+.dot.free { color: var(--ok); background: var(--ok-dim); }
+.dot.taken { color: var(--line); background: var(--surface-2); }
+
+/* ---- решения ---- */
+.choice {
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+  padding: 16px 18px; display: flex; flex-direction: column; gap: 12px;
+}
+.opts { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.opt { display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: baseline; font-size: 14px; }
+.tick {
+  font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+  background: var(--surface-2); color: var(--text-3); border: 1px solid var(--line);
+}
+.tick.rec { background: var(--ok-dim); color: var(--ok); border-color: var(--ok); }
+.opt span:last-child { color: var(--text-2); }
+.opt span:last-child b { color: var(--text); font-weight: 600; }
+
+/* ---- фазы ---- */
+.phases { display: flex; flex-direction: column; gap: 12px; }
+details.phase {
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface); overflow: hidden;
+}
+summary {
+  cursor: pointer; list-style: none; padding: 14px 18px;
+  display: grid; grid-template-columns: 30px 1fr auto; gap: 14px; align-items: baseline;
+}
+summary::-webkit-details-marker { display: none; }
+summary:hover { background: var(--surface-2); }
+.ph-num { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--managed); }
+.ph-title { font-weight: 600; font-size: 15.5px; }
+.ph-where { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+.ph-body {
+  padding: 4px 18px 18px 62px; display: flex; flex-direction: column; gap: 13px;
+  border-top: 1px solid var(--line-soft);
+}
+.ph-body p { font-size: 14px; color: var(--text-2); }
+.ph-body p b, .ph-body li b { color: var(--text); font-weight: 600; }
+.ph-body ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--text-2); }
+.ph-body li { margin-bottom: 5px; }
+pre {
+  margin: 0; background: var(--ground-2); border: 1px solid var(--line-soft);
+  border-radius: 7px; padding: 13px 15px; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.6px; line-height: 1.62; color: var(--text);
+}
+pre .c { color: var(--text-3); }
+pre .h { color: var(--managed); }
+
+/* ---- приёмка ---- */
+.accept { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.acc-item {
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.acc-item .k { font-family: var(--mono); font-size: 12px; color: var(--ok); letter-spacing: .04em; }
+.acc-item p { font-size: 13.5px; color: var(--text-2); }
+
+/* ---- финальный блок ---- */
+.hold {
+  border: 1px solid var(--violet); border-radius: 9px; padding: 16px 20px;
+  background: color-mix(in srgb, var(--violet) 10%, var(--surface));
+  display: flex; flex-direction: column; gap: 9px;
+}
+.hold ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--text-2); }
+.hold li { margin-bottom: 4px; }
+.hold li b { color: var(--text); }
+
+footer {
+  border-top: 1px solid var(--line-soft); margin-top: 46px; padding-top: 18px;
+  font-size: 12.5px; color: var(--text-3);
+}
+
+@media (max-width: 640px) {
+  .wrap { padding: 28px 15px 70px; }
+  .ph-body { padding-left: 18px; }
+  summary { grid-template-columns: 26px 1fr; }
+  .ph-where { grid-column: 2; }
+  dl.spec { grid-template-columns: 1fr auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="wrap stack g5">
+
+  <header class="head">
+    <div class="eyebrow">Runbook · push-модель 2.0.0 · код готов, осталась установка</div>
+    <h1>Запуск SmartDNS<br>на существующем флоте</h1>
+    <div class="verdict">
+      <p><strong>Панель ходит к нодам, ноды наружу не звонят.</strong> Значит control plane можно
+      посадить куда угодно и переносить хоть каждый день, а ноды садятся рядом с уже стоящими
+      remnanode. Три роли, три сервера, один порт управления <code>3333</code>. Ниже — что решено,
+      что осталось решить, и по шагам, что делать руками.</p>
+    </div>
+    <div class="done-row">
+      <span class="chip ok">✓ код 2.0.0</span>
+      <span class="chip ok">✓ make check зелёный</span>
+      <span class="chip ok">✓ e2e 33/33 в Docker</span>
+      <span class="chip ok">✓ ingress → Питер</span>
+      <span class="chip wait">осталось: где панель</span>
+      <span class="chip wait">осталось: какой egress</span>
+      <span class="chip wait">осталось: сертификат DoT/DoH</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Кто где живёт</div>
+      <h2>Раскладка ролей</h2>
+    </div>
+
+    <div class="hosts">
+      <article class="host">
+        <div class="host-top ctl stack g1">
+          <span class="role ctl">Панель · control plane</span>
+          <div class="host-name">кочует · советую 88.216.70.241</div>
+          <div class="host-ip">панель Remnawave · Германия · 2 vCPU</div>
+        </div>
+        <dl class="spec">
+          <dt>Роль</dt><dd>чеканит бандлы, компилит,<br>толкает конфиг</dd>
+          <dt>Трафик</dt><dd class="v-ok">ноль байт юзеров</dd>
+          <dt>Вход</dt><dd class="v-ok">не нужен</dd>
+          <dt>UI</dt><dd>8080 за nginx</dd>
+          <dt>Наружу</dt><dd>сама к нодам :3333</dd>
+          <dt>Гео</dt><dd class="v-ok">безразлично</dd>
+          <dt>Переезд</dt><dd class="v-ok">одна команда</dd>
+        </dl>
+      </article>
+
+      <article class="host">
+        <div class="host-top ru stack g1">
+          <span class="role ru">Ingress · приём от устройств</span>
+          <div class="host-name">чистый Питер</div>
+          <div class="host-ip">212.67.10.15 · Beget SPb · 443 свободен</div>
+        </div>
+        <dl class="spec">
+          <dt>Роль</dt><dd>DNS-фронт + Unbound<br>+ SNI-прокси + агент</dd>
+          <dt>Память</dt><dd class="v-ok">~51 МиБ в покое</dd>
+          <dt>Порт 443</dt><dd class="v-ok">свободен</dd>
+          <dt>Порт 53</dt><dd class="v-ok">свободен</dd>
+          <dt>DoT 853</dt><dd class="v-ok">свободен</dd>
+          <dt>Ключ ssh</dt><dd>добавлен руками</dd>
+          <dt>Почему сюда</dt><dd>443 занят<br>на всём флоте</dd>
+        </dl>
+      </article>
+
+      <article class="host">
+        <div class="host-top us stack g1">
+          <span class="role us">Egress · выход в интернет</span>
+          <div class="host-name">любая нода флота</div>
+          <div class="host-ip">напр. cs.nl 84.32.104.6 · 8443 свободен</div>
+        </div>
+        <dl class="spec">
+          <dt>Роль</dt><dd>relay + агент</dd>
+          <dt>Память</dt><dd class="v-ok">~19 МиБ, рядом<br>с remnanode</dd>
+          <dt>Relay 8443</dt><dd class="v-ok">свободен везде</dd>
+          <dt>Порт 443</dt><dd class="v-warn">занят (не трогаем)</dd>
+          <dt>Гео</dt><dd>под сервис —<br>любая страна</dd>
+          <dt>Открыт для</dt><dd>только ingress</dd>
+        </dl>
+      </article>
+    </div>
+
+    <p class="sec-note">
+      Egress можно поднять на скольких угодно нодах флота — каждая даёт свою страну выхода.
+      В раскладке сервиса вы выбираете, через какую из них уводить домены. Ingress пока один
+      (Питер); когда захочется отказоустойчивости — добавляется вторая ingress-нода, и компилятор
+      кладёт оба адреса в конфиг каждого устройства (multi-A). Это уже проверено в стенде.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Кто чем владеет и что открываем</div>
+      <h2>Карта портов</h2>
+    </div>
+
+    <div class="portmap">
+      <div class="pm-host">
+        <div class="pm-label">
+          <span class="role ctl">Панель</span>
+          <span class="ph-where">88.216.70.241</span>
+        </div>
+        <div class="pm-rail">
+          <div class="port free"><span class="num">8080/tcp</span><span class="who">UI — за nginx, наружу не светим</span></div>
+          <div class="port free"><span class="num">3333 →</span><span class="who">исходящий клиент к нодам</span></div>
+          <div class="port taken"><span class="num">443/tcp</span><span class="who">remnawave-nginx · не трогаем</span></div>
+        </div>
+      </div>
+
+      <div class="pm-host">
+        <div class="pm-label">
+          <span class="role ru">Ingress · Питер</span>
+          <span class="ph-where">212.67.10.15</span>
+        </div>
+        <div class="pm-rail">
+          <div class="port free"><span class="num">443/tcp</span><span class="who">SNI-прокси · managed HTTPS · наружу</span></div>
+          <div class="port free"><span class="num">853/tcp</span><span class="who">DoT · Android Private DNS · наружу</span></div>
+          <div class="port free"><span class="num">8443/tcp</span><span class="who">DoH · наружу</span></div>
+          <div class="port free"><span class="num">53/udp+tcp</span><span class="who">обычный DNS · ТОЛЬКО из VPN-подсети</span></div>
+          <div class="port free"><span class="num">3333/tcp</span><span class="who">управление · ТОЛЬКО с IP панели</span></div>
+        </div>
+      </div>
+
+      <div class="pm-host">
+        <div class="pm-label">
+          <span class="role us">Egress · флот</span>
+          <span class="ph-where">84.32.104.6</span>
+        </div>
+        <div class="pm-rail">
+          <div class="port free"><span class="num">8443/tcp</span><span class="who">relay · ТОЛЬКО с IP ingress</span></div>
+          <div class="port free"><span class="num">3333/tcp</span><span class="who">управление · ТОЛЬКО с IP панели</span></div>
+          <div class="port taken"><span class="num">443·853</span><span class="who">remnanode + nginx · не трогаем</span></div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span><i class="dot free"></i> открываем сами</span>
+        <span><i class="dot taken"></i> занято флотом, не трогаем</span>
+      </div>
+    </div>
+
+    <p class="sec-note">
+      Два порта управления (<code>3333</code>) и relay (<code>8443</code>) закрываются на уровне
+      пакетов по IP — <b>вторым рубежом поверх mTLS</b>, ровно как <code>ALLOW</code> на remnanode.
+      Устройствам открыты только <code>443/853/8443</code>; обычный <code>53</code> — лишь тем, кто уже
+      в вашем AmneziaWG. Открытого резолвера мы не создаём: спецификация продукта это прямо запрещает.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Осталось выбрать до первой команды</div>
+      <h2>Три решения за вами</h2>
+    </div>
+
+    <div class="stack g3">
+      <div class="choice">
+        <div class="stack g1">
+          <div class="eyebrow">Решение A</div>
+          <h3>Где живёт панель</h3>
+        </div>
+        <ul class="opts">
+          <li class="opt"><span class="tick rec">советую</span><span><b>Нода-панель Remnawave, 88.216.70.241.</b>
+            Там уже 2 vCPU, уже стоит nginx, который отдаст UI по <code>panel.nolim.cloud</code> как ещё один
+            сайт. Control plane трафика юзеров не несёт — его география и юрисдикция безразличны. Ноды
+            переживают отключение панели на last-known-good, это проверено.</span></li>
+          <li class="opt"><span class="tick">вариант</span><span><b>Домашняя лаба, 10.9.9.4.</b>
+            8 ядер, 15 ГБ, порт 53 свободен — с запасом. Наружу UI отдаётся через NPM на bg.ru по
+            awg-туннелю. Минус: панель должна доставать ноды по <code>3333</code> — из лабы это идёт через
+            тот же туннель, лишнее звено, которое может упасть.</span></li>
+          <li class="opt"><span class="tick">вариант</span><span><b>Старый сервер с NPM (bg.ru).</b>
+            Панели порт наружу не нужен вовсе — встаёт за NPM как поддомен. Годится, но памяти там впритык
+            (380 МиБ свободно), а держать control plane на самой заметной RU-ноде — не лучший выбор.</span></li>
+        </ul>
+      </div>
+
+      <div class="choice">
+        <div class="stack g1">
+          <div class="eyebrow">Решение B</div>
+          <h3>Какая нода — первый egress</h3>
+        </div>
+        <p style="font-size:14px; color:var(--text-2)">Это выбор страны выхода для первого сервиса, а не
+        архитектуры: egress можно добавить на любую ноду позже. <code>8443</code> свободен на всех.</p>
+        <ul class="opts">
+          <li class="opt"><span class="tick rec">советую</span><span><b>cs.nl — 84.32.104.6.</b>
+            Нидерланды, близко к РФ по задержке, чистая репутация IP под большинство сервисов.</span></li>
+          <li class="opt"><span class="tick">вариант</span><span><b>int.pl 95.85.254.125 · 1c.de 64.188.83.63 · cs.us 88.216.68.214.</b>
+            Польша / Германия / США — берите под конкретный сервис, которому нужна именно эта страна.</span></li>
+        </ul>
+      </div>
+
+      <div class="choice">
+        <div class="stack g1">
+          <div class="eyebrow">Решение C</div>
+          <h3>Сертификат для DoT и DoH</h3>
+        </div>
+        <p style="font-size:14px; color:var(--text-2)">На чистом Питере NPM нет — <code>853</code> (DoT)
+        и <code>8443</code> (DoH) терминируют TLS <b>сами</b>, им нужен настоящий сертификат на имя
+        <code>dns.nolim.cloud</code>. SNI-прокси на <code>443</code> сертификат не терминирует — он читает
+        SNI и пробрасывает, ему cert не нужен.</p>
+        <ul class="opts">
+          <li class="opt"><span class="tick rec">советую</span><span><b>certbot DNS-01 через Cloudflare.</b>
+            Зона <code>nolim.cloud</code> на Cloudflare — выпуск и продление идут по API, без открытого 80
+            и без остановки прокси. Сертификат кладётся в том, монтируется ноде, deploy-hook перекладывает
+            при продлении.</span></li>
+          <li class="opt"><span class="tick">на потом</span><span><b>Самоподписанный для проверки.</b>
+            Флаг <code>ALLOW_SELF_SIGNED_TLS=1</code> в <code>.env</code> ноды — поднять и проверить путь
+            за минуту, до выпуска настоящего. В прод так не оставляем.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">После того как A, B, C выбраны — по порядку</div>
+      <h2>Установка по фазам</h2>
+    </div>
+
+    <div class="phases">
+
+      <details class="phase" open>
+        <summary><span class="ph-num">00</span><span class="ph-title">Код на серверы и лимиты ядра</span><span class="ph-where">мак + все ноды</span></summary>
+        <div class="ph-body">
+          <p>Install-скрипты собирают образы из исходников рядом с собой. Значит на сервер нужно занести
+          репозиторий (приватный GitHub → clone). На <b>чистом Питере и панели</b> сборка на месте
+          нормальна. На <b>egress-ноде флота (1 vCPU, ~1 ГБ)</b> сборка Go тяжеловата — соберите образ
+          один раз и перенесите готовым.</p>
+          <pre><span class="c"># мак: приватный репозиторий</span>
+git init -b main && git add -A && git commit -m "SmartDNS 2.0.0"
+gh repo create smart-dns-proxy --private --source=. --push
+
+<span class="c"># тесная egress-нода: не собирать на ней, а привезти образы</span>
+docker compose build              <span class="c"># на маке/панели</span>
+docker save smartdns/node:2.0.0 | ssh egress 'docker load'</pre>
+          <p>И на <b>каждой</b> ноде — лимиты под тысячи соединений. Сейчас <code>nf_conntrack_max</code>
+          обычно <code>8192</code>, а <code>ulimit -n</code> — 1024; для нагрузки этого мало.</p>
+          <pre>cat &gt; /etc/sysctl.d/99-smartdns.conf &lt;&lt;'EOF'
+net.netfilter.nf_conntrack_max = 262144
+net.core.somaxconn = 4096
+EOF
+sysctl --system</pre>
+        </div>
+      </details>
+
+      <details class="phase">
+        <summary><span class="ph-num">01</span><span class="ph-title">Панель</span><span class="ph-where">по решению A</span></summary>
+        <div class="ph-body">
+          <p>UI слушает <code>8080</code> открытым HTTP — перед ним обязателен TLS. На ноде-панели это делает
+          уже стоящий remnawave-nginx (proxy host на <code>127.0.0.1:8080</code>). <b>Входного шлюза у панели
+          больше нет</b> — она исходящий клиент, наружу открывать нечего.</p>
+          <pre>bash &lt;(curl -fsSL https://&lt;хост&gt;/install.sh) --role panel \
+  --public-url https://panel.nolim.cloud \
+  --admin-email vitalikmen1997@gmail.com
+
+<span class="c"># пароль печатается в журнал ровно один раз</span>
+docker compose -f /opt/smartdns-panel/docker-compose.yml logs panel-api \
+  | grep -A3 'Учётная запись'</pre>
+          <p>Одна команда <code>install.sh</code> сама проверит порты, диск, время и Docker и остановится, если
+          что-то занято. <code>&lt;хост&gt;</code> — raw публичного репозитория; из склонированного репозитория то же
+          самое: <code>sudo bash install.sh --role panel …</code>.</p>
+          <p>Ключевой материал — <b>CA и клиентский сертификат панели</b> — лежит в томе
+          <code>panelstate</code> и едет в бэкапе. Именно им панель доказывает нодам, что это она; поэтому
+          переезд панели не требует перевыпуска ничего на нодах (фаза 06).</p>
+        </div>
+      </details>
+
+      <details class="phase">
+        <summary><span class="ph-num">02</span><span class="ph-title">Ingress</span><span class="ph-where">212.67.10.15 · Питер</span></summary>
+        <div class="ph-body">
+          <p>В панели: <b>Ноды → Добавить ноду → ingress</b>, вписать адрес управления
+          <code>212.67.10.15:3333</code>, скопировать <b>бандл</b> (base64 — в нём TLS-личность ноды и
+          пин панели, как <code>SECRET_KEY</code> у remnanode).</p>
+          <pre>bash &lt;(curl -fsSL https://&lt;хост&gt;/install.sh) --role ingress \
+  --bundle &lt;BASE64 из панели&gt; \
+  --panel-ip 88.216.70.241</pre>
+          <p>Скрипт проверит, что <code>53/443/853/8443</code> свободны (иначе <b>остановится и покажет, кто их
+          держит</b> — ничего не отбирая), поднимет контейнеры и сам откроет <code>3333</code> только для IP
+          панели. Имя ноды берётся из бандла — задавать его в команде не нужно. Дальше — сертификат
+          (решение C) и порты устройствам:</p>
+          <pre><span class="c"># сертификат dns.nolim.cloud через Cloudflare DNS-01</span>
+certbot certonly --dns-cloudflare \
+  --dns-cloudflare-credentials /root/.cf.ini -d dns.nolim.cloud
+
+<span class="c"># прописать его ноде в /opt/smartdns-node/.env</span>
+TLS_DIR=/etc/letsencrypt/live/dns.nolim.cloud
+TLS_CERT_FILE=/etc/smartdns/tls/fullchain.pem
+TLS_KEY_FILE=/etc/smartdns/tls/privkey.pem
+
+<span class="c"># порты устройствам</span>
+ufw allow 443/tcp                              <span class="c"># SNI-прокси (managed HTTPS)</span>
+ufw allow 853/tcp                              <span class="c"># DoT — основной путь, Android</span>
+ufw allow 8443/tcp                             <span class="c"># DoH</span>
+ufw allow from 10.9.9.0/24 to any port 53      <span class="c"># обычный DNS — только своим</span></pre>
+          <p><b>DoT на 853 — главный путь для устройств</b> (стандартный порт, Android Private DNS берёт его
+          сходу). DoH на <code>8443</code>, потому что <code>443</code> занят SNI-прокси; клиенту адрес
+          указывается с портом. Захотите DoH на чистом 443 — это второй IP для прокси, как в комментарии
+          к compose.</p>
+        </div>
+      </details>
+
+      <details class="phase">
+        <summary><span class="ph-num">03</span><span class="ph-title">Egress</span><span class="ph-where">по решению B · флот</span></summary>
+        <div class="ph-body">
+          <p>Самая простая фаза: конфликтов портов нет, ставится рядом с remnanode.</p>
+          <pre>bash &lt;(curl -fsSL https://&lt;хост&gt;/install.sh) --role egress \
+  --bundle &lt;BASE64 из панели&gt; \
+  --panel-ip 88.216.70.241 --relay-port 8443
+
+<span class="c"># relay открыт ТОЛЬКО для ingress — иначе это открытый прокси</span>
+ufw allow from 212.67.10.15 to any port 8443 proto tcp \
+  comment 'relay from ingress-spb-01'</pre>
+          <p>Relay и так требует клиентский сертификат ноды и проверяет домен по allowlist — но правило на
+          уровне пакетов стоит копейки и закрывает порт от всех, кроме ingress.</p>
+        </div>
+      </details>
+
+      <details class="phase">
+        <summary><span class="ph-num">04</span><span class="ph-title">Первый сервис и приёмка</span><span class="ph-where">панель + телефон</span></summary>
+        <div class="ph-body">
+          <p>В панели есть <b>Быстрый старт</b>: набор правил → сервис → группы → сборка ревизии → выкат.
+          Собрали ревизию — панель тут же <b>протолкнёт</b> конфиг на ноды по <code>3333</code>, здоровье
+          опрашивает каждые ~10 с. Перед первой ревизией выставьте:</p>
+          <ul>
+            <li><b>Режим доступа к DNS</b> — <code>restricted-public-dot</code> для Android либо
+              <code>doh</code>-профиль для iOS. Списком IP не выйдет: у телефонов адрес меняется.</li>
+            <li><b>Публиковать AAAA</b> — <b>нет</b>. IPv6 на нодах нет, а Happy Eyeballs предпочтёт его:
+              включите — часть запросов начнёт молча падать.</li>
+            <li><b>Уровень логов нод</b> — <code>info</code>. На <code>debug</code> ingress пишет SNI каждого
+              соединения; это для разбора, не для постоянной работы.</li>
+            <li><b>Egress группы</b> — выбрать ноду из решения B; ingress-адрес <code>212.67.10.15</code>
+              компилятор подставит в конфиг устройств сам.</li>
+          </ul>
+          <p>Приёмка — <b>с телефона</b>, а не из панели:</p>
+          <pre>dig +short &lt;управляемый-домен&gt; @212.67.10.15   <span class="c"># вернёт адрес ingress</span>
+dig +short example.org @212.67.10.15           <span class="c"># вернёт настоящий адрес</span>
+curl -s https://&lt;домен&gt;/ -o /dev/null -w '%{remote_ip}\n' <span class="c"># выход через egress</span></pre>
+        </div>
+      </details>
+
+      <details class="phase">
+        <summary><span class="ph-num">05</span><span class="ph-title">Бэкап и переезд панели</span><span class="ph-where">по требованию</span></summary>
+        <div class="ph-body">
+          <p>Ради чего всё это и переписывалось. Панель уезжает на новый сервер <b>без перевыпуска чего-либо
+          на нодах</b> — ноды доверяют по отпечатку сертификата панели, а не по её IP.</p>
+          <p><b>Прямо из интерфейса:</b> на старой панели <b>Настройки → Резервная копия и перенос → Скачать
+          копию</b> (задайте пароль). На новом сервере поставьте голую панель скриптом, войдите, и там же
+          <b>Восстановить</b> → загрузите файл. Панель перезапустится уже с прежними CA, ключами и базой —
+          переустанавливать и настраивать заново ничего не нужно. Копии автоматически снимаются ежедневно;
+          скачать можно и свежую автоматическую. Тот же файл принимает и CLI ниже — форматы едины.</p>
+          <pre><span class="c"># копию везём с собой (шифрована паролем из .env старой панели)</span>
+scp /var/backups/smartdns/smartdns-*.tar.enc root@новый:/tmp/
+
+<span class="c"># на новом сервере — установка И восстановление одной командой</span>
+BACKUP_PASSPHRASE=&lt;из .env старой панели&gt; \
+bash &lt;(curl -fsSL https://&lt;хост&gt;/install.sh) --role panel \
+  --public-url https://panel.nolim.cloud \
+  --admin-email vitalikmen1997@gmail.com \
+  --restore /tmp/smartdns-&lt;...&gt;.tar.enc
+
+<span class="c"># на КАЖДОЙ ноде — впустить новый IP панели, убрать старый</span>
+ufw allow from &lt;новый-IP&gt; to any port 3333 proto tcp
+ufw delete allow from &lt;старый-IP&gt; to any port 3333 proto tcp
+
+<span class="c"># DNS: panel.nolim.cloud → новый адрес</span></pre>
+          <p>Пока панель переезжает — ноды обслуживают последний конфиг с диска. Простоя у пользователей нет.</p>
+        </div>
+      </details>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Зелёный свет — это когда</div>
+      <h2>Что должно сойтись</h2>
+    </div>
+    <div class="accept">
+      <div class="acc-item"><span class="k">панель</span><p>UI открывается по HTTPS, в списке нод обе — ingress и egress — со статусом <b>жива</b> и свежей версией конфига.</p></div>
+      <div class="acc-item"><span class="k">управляемый домен</span><p><code>dig</code> отдаёт адрес ingress, сайт открывается, <code>remote_ip</code> = адрес egress-ноды.</p></div>
+      <div class="acc-item"><span class="k">прямой домен</span><p><code>example.org</code> резолвится в настоящий адрес и идёт напрямую, без крюка через флот.</p></div>
+      <div class="acc-item"><span class="k">DoT</span><p>Android с Private DNS = <code>dns.nolim.cloud</code> ходит по <code>853</code> с валидным сертификатом.</p></div>
+      <div class="acc-item"><span class="k">фаервол</span><p><code>3333</code> и <code>8443</code> отвечают только с нужных IP; с чужого — таймаут.</p></div>
+      <div class="acc-item"><span class="k">фолбек</span><p>Останови панель — ноды продолжают отвечать; подними — конфиг сам догоняется по версии.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Границы</div>
+      <h2>Чего в плане намеренно нет</h2>
+    </div>
+    <div class="hold">
+      <ul>
+        <li><b>Сама установка не запущена</b> — по вашему слову «всё кроме установки». Код готов и проверен в стенде; фазы выше — то, что делается руками в проде.</li>
+        <li><b>Локальный фолбек SNI</b> (прокси делит 443 с NPM на одном IP) — не писал. Он нужен только если ingress придётся сажать на забитый сервер без второго IP; на чистом Питере не требуется.</li>
+        <li><b>Второй ingress</b> для отказоустойчивости — код готов (multi-A проверен), но в этот план не входит: поднимается тем же скриптом, когда понадобится.</li>
+        <li><b>DoH на чистом 443</b> — оставлен на <code>8443</code>. Перенос на 443 = второй IP для SNI-прокси, отдельное решение.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Раскладка и адреса — из инвентаря флота, снятого по SSH 27 августа 2026. Команды сверены с
+    <code>scripts/install-panel.sh</code>, <code>scripts/install-node.sh</code> и compose-файлами ролей
+    версии 2.0.0. Замеры памяти — с контейнеров стенда.
+  </footer>
+
+</div>

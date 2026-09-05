@@ -1,29 +1,14 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"crypto/rand"
+	"encoding/base32"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"smartdns/panel/internal/auth"
 	"smartdns/panel/internal/store"
 )
-
-func (s *Server) listDeviceProfiles(w http.ResponseWriter, r *http.Request) error {
-	rows, err := store.Many[store.DeviceProfile](r.Context(), s.DB,
-		`SELECT id, name, type, config, revoked_at, version, created_at FROM device_profiles ORDER BY created_at DESC`)
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items":    rows,
-		"defaults": s.dnsEndpoints(r.Context()),
-	})
-	return nil
-}
 
 func (s *Server) dnsEndpoints(ctx contextT) map[string]any {
 	type row struct {
@@ -52,101 +37,85 @@ func (s *Server) dnsEndpoints(ctx contextT) map[string]any {
 	}
 }
 
-type deviceProfileRequest struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+// newDeviceToken returns a short token safe as both a DoH path segment and a DNS
+// label (Android's DoT carries it as the SNI label <token>.<host>). Lowercase
+// base32 keeps it to 8 characters at 40 bits — much stronger than 8 hex chars —
+// while staying LDH-valid and case-stable, so the DoH path (hashed as-is) and
+// the DoT SNI (lowercased before hashing) yield the same hash. Its alphabet
+// (a-z2-7) also drops the look-alike 0/1/8/9, so the address is easy to read
+// aloud. base64url would not do: its "_" is illegal in a hostname.
+//
+// ponytail: 40 bits leans on the resolver's rate limiter, not the token alone;
+// a guessed token only grants resolver use (and burns that user's quota), never
+// account access. Bump the byte count here if that tradeoff ever feels thin.
+func newDeviceToken() string {
+	b := make([]byte, 5) // 40 bits -> exactly 8 base32 chars, no padding
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
 }
 
-func (s *Server) createDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	var req deviceProfileRequest
-	if err := decodeJSON(r, &req); err != nil {
-		return err
-	}
-	if !contains([]string{"android_dot", "apple_doh", "apple_dot", "windows_doh", "router", "plain"}, req.Type) {
-		return badRequest("недопустимый тип профиля")
-	}
-	if strings.TrimSpace(req.Name) == "" {
-		return badRequest("укажите название профиля")
-	}
-	endpoints := s.dnsEndpoints(r.Context())
-	cfg := map[string]any{"endpoints": endpoints}
+// deviceTypes are the platforms a profile can target.
+var deviceTypes = []string{"android_dot", "apple_doh", "apple_dot", "windows_doh", "router", "plain"}
 
-	// DoH profiles get a unique path token so the resolver is not open to the
-	// whole Internet. Android Private DNS (DoT) cannot carry such a token —
-	// that limitation is surfaced to the operator, not hidden.
-	var token string
-	tokenHash := ""
-	if req.Type == "apple_doh" || req.Type == "windows_doh" || req.Type == "router" {
-		token = auth.RandomToken(18)
-		sum := sha256.Sum256([]byte(token))
-		tokenHash = hex.EncodeToString(sum[:])
+// buildDeviceConfig assembles the stored config for a new device and mints its
+// DoH path token where the platform can carry one. DoH profiles get a unique
+// path token so the resolver is not open to the whole Internet; Android Private
+// DNS (DoT) cannot carry such a token — that limitation is surfaced to the
+// operator, not hidden. Shared by the operator page and the subscription API.
+func (s *Server) buildDeviceConfig(ctx contextT, typ string) (map[string]any, string, string) {
+	cfg := map[string]any{"endpoints": s.dnsEndpoints(ctx)}
+	var token, tokenHash string
+	switch typ {
+	case "apple_doh", "windows_doh", "router", "android_dot":
+		// Every encrypted profile gets a personal token. DoH carries it in the
+		// path; Android's DoT carries it as the SNI label <token>.<dot host>,
+		// which the wildcard certificate and the node's SNI parsing make work —
+		// so Android takes part in per-device access just like the rest.
+		token = newDeviceToken()
+		tokenHash = hashToken(token)
 		cfg["path_token"] = token
 	}
-	if req.Type == "android_dot" {
-		cfg["warning"] = "Android Private DNS не передаёт токен. Для этого профиля резолвер работает в режиме restricted-public-dot: строгие лимиты запросов вместо персональной аутентификации."
-	}
-	b, _ := json.Marshal(cfg)
-	p, err := store.One[store.DeviceProfile](r.Context(), s.DB, `
-		INSERT INTO device_profiles (name, type, config, token_hash) VALUES ($1,$2,$3,$4)
-		RETURNING id, name, type, config, revoked_at, version, created_at`,
-		req.Name, req.Type, b, tokenHash)
-	if err != nil {
-		return err
-	}
-	if tokenHash != "" {
-		if err := s.appendSettingList(r.Context(), "doh_path_tokens", tokenHash); err != nil {
-			return err
-		}
-	}
-	s.audit(r.Context(), r, "device_profile.created", "device_profile", p.ID, nil,
-		map[string]any{"name": req.Name, "type": req.Type})
-	writeJSON(w, http.StatusCreated, map[string]any{"profile": p, "token": token})
-	return nil
+	return cfg, token, tokenHash
 }
 
-func (s *Server) deleteDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	var hash string
-	_ = s.DB.QueryRow(r.Context(), `SELECT token_hash FROM device_profiles WHERE id=$1`, id).Scan(&hash)
-	n, err := s.DB.ExecN(r.Context(), `DELETE FROM device_profiles WHERE id=$1`, id)
-	if err != nil {
-		return err
+// renderDeviceArtifact produces the platform-specific setup file for a profile:
+// a .mobileconfig for Apple, Markdown instructions elsewhere. Shared by the
+// operator download and the subscription page, so both stay identical.
+func renderDeviceArtifact(p store.DeviceProfile) (contentType, filename string, body []byte) {
+	dohURL, dotHost, v4 := deviceAddressesFull(p)
+	switch p.Type {
+	case "apple_doh", "apple_dot":
+		return "application/x-apple-aspen-config", safeName(p.Name) + ".mobileconfig",
+			[]byte(appleMobileconfig(p, dohURL, dotHost, v4))
+	default:
+		return "text/markdown; charset=utf-8", safeName(p.Name) + ".md",
+			[]byte(instructions(p, dohURL, dotHost, v4))
 	}
-	if n == 0 {
-		return notFound("profile")
-	}
-	if hash != "" {
-		_ = s.removeSettingList(r.Context(), "doh_path_tokens", hash)
-	}
-	s.audit(r.Context(), r, "device_profile.deleted", "device_profile", id, nil, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-	return nil
 }
 
-// downloadDeviceProfile renders the platform-specific setup artifact.
-func (s *Server) downloadDeviceProfile(w http.ResponseWriter, r *http.Request) error {
-	id := r.PathValue("id")
-	p, err := store.One[store.DeviceProfile](r.Context(), s.DB,
-		`SELECT id, name, type, config, revoked_at, version, created_at FROM device_profiles WHERE id=$1`, id)
-	if err != nil {
-		return err
-	}
+// deviceAddressesFull unpacks the personal endpoints stored in a profile.
+func deviceAddressesFull(p store.DeviceProfile) (dohURL, dotHost string, v4 []string) {
 	endpoints, _ := p.Config["endpoints"].(map[string]any)
 	dohHost, _ := endpoints["doh_hostname"].(string)
-	dotHost, _ := endpoints["dot_hostname"].(string)
+	dotHost, _ = endpoints["dot_hostname"].(string)
 	dohPath, _ := endpoints["doh_path"].(string)
 	token, _ := p.Config["path_token"].(string)
 	if dohPath == "" {
 		dohPath = "/dns-query"
 	}
-	dohURL := ""
 	if dohHost != "" {
 		dohURL = "https://" + dohHost + strings.TrimRight(dohPath, "/")
 		if token != "" {
 			dohURL += "/" + token
 		}
 	}
-	var v4 []string
+	// Android's Private DNS field takes only a hostname, so the token rides as
+	// the SNI label. The wildcard cert covers it and the node reads it back.
+	if token != "" && dotHost != "" {
+		dotHost = token + "." + dotHost
+	}
 	if raw, ok := endpoints["ingress_ipv4"].([]any); ok {
 		for _, x := range raw {
 			if s, ok := x.(string); ok {
@@ -154,19 +123,7 @@ func (s *Server) downloadDeviceProfile(w http.ResponseWriter, r *http.Request) e
 			}
 		}
 	}
-
-	switch p.Type {
-	case "apple_doh", "apple_dot":
-		body := appleMobileconfig(p, dohURL, dotHost, v4)
-		w.Header().Set("Content-Type", "application/x-apple-aspen-config")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeName(p.Name)+`.mobileconfig"`)
-		_, _ = w.Write([]byte(body))
-	default:
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeName(p.Name)+`.md"`)
-		_, _ = w.Write([]byte(instructions(p, dohURL, dotHost, v4)))
-	}
-	return nil
+	return dohURL, dotHost, v4
 }
 
 func safeName(s string) string {

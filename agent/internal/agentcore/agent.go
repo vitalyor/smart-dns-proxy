@@ -29,7 +29,7 @@ import (
 )
 
 // Version is the agent build version, reported to the panel in health.
-var Version = "2.0.2"
+var Version = "2.0.3"
 
 // Config controls the agent runtime.
 type Config struct {
@@ -46,6 +46,13 @@ type Config struct {
 	// ACMEHTTPAddr is the address the HTTP-01 challenge server binds, but only
 	// for the few seconds an issuance runs — it is closed again immediately.
 	ACMEHTTPAddr string
+	// DNSLogURL is the dns-frontend's internal live-query-log URL, proxied to the
+	// panel via GET /v1/dns/log. Empty (e.g. on egress) makes that route report
+	// "no query log on this node" instead of erroring.
+	DNSLogURL string
+	// DNSCountersURL is the sibling endpoint serving per-device tallies, proxied
+	// to the panel via GET /v1/dns/counters. Empty behaves the same way.
+	DNSCountersURL string
 }
 
 // Agent is the running node agent (an HTTPS server).
@@ -176,6 +183,10 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux.HandleFunc("POST /v1/config", a.wrap(a.handleConfig))
 	mux.HandleFunc("GET /v1/health", a.wrap(a.handleHealth))
 	mux.HandleFunc("POST /v1/cert/issue", a.wrap(a.handleCert))
+	mux.HandleFunc("POST /v1/access/tokens", a.wrap(a.handleAccess))
+	mux.HandleFunc("POST /v1/cert/install", a.wrap(a.handleInstallCert))
+	mux.HandleFunc("GET /v1/dns/log", a.wrap(a.handleDNSLog))
+	mux.HandleFunc("GET /v1/dns/counters", a.wrap(a.handleDNSCounters))
 
 	srv := &http.Server{
 		Addr:    a.cfg.ListenAddr,
@@ -312,6 +323,8 @@ func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) error {
 		LastErr:           a.lastErr,
 	}
 	a.mu.Unlock()
+	// Lets the panel spot token drift during its ordinary poll and re-push.
+	h.AccessHash = a.accessHash()
 	a.probe(&h)
 	writeJSON(w, http.StatusOK, h)
 	return nil

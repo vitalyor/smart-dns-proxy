@@ -4,6 +4,8 @@
 package dnsfe
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/netip"
 	"strings"
 	"sync"
@@ -24,7 +26,10 @@ type Router struct {
 	routes []route
 	cfg    *model.NodeConfig
 	acl    []netip.Prefix
-	tokens map[string]bool
+	// tokens is owned by the access channel, not by the config: applying a
+	// configuration must never clobber a newer token set (ADR 0012).
+	tokens    map[string]bool
+	tokenHash string
 }
 
 // NewRouter compiles a routing table from a node config.
@@ -47,13 +52,71 @@ func (r *Router) Apply(c *model.NodeConfig) {
 			acl = append(acl, p)
 		}
 	}
-	tokens := make(map[string]bool, len(c.DNS.Access.DoHPathTokens))
-	for _, t := range c.DNS.Access.DoHPathTokens {
-		tokens[strings.ToLower(t)] = true
-	}
 	r.mu.Lock()
-	r.routes, r.cfg, r.acl, r.tokens = routes, c, acl, tokens
+	r.routes, r.cfg, r.acl = routes, c, acl
 	r.mu.Unlock()
+}
+
+// SetTokens swaps the accepted DoH path token set. Separate from Apply on
+// purpose: access changes far more often than configuration, and a config
+// rollout must not undo a newer set.
+func (r *Router) SetTokens(tokens []string) {
+	m := make(map[string]bool, len(tokens))
+	for _, t := range tokens {
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			m[t] = true
+		}
+	}
+	h := model.AccessHash(tokens)
+	r.mu.Lock()
+	r.tokens, r.tokenHash = m, h
+	r.mu.Unlock()
+}
+
+// KnownToken reports whether the hash belongs to the live set. Used to keep the
+// per-token tallies bounded: only tokens the panel issued are ever counted.
+func (r *Router) KnownToken(t string) bool {
+	if t == "" {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.tokens[strings.ToLower(t)]
+}
+
+// TokensHash reports the digest of the current set so the node can tell the
+// panel what it holds and the two can converge.
+func (r *Router) TokensHash() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.tokenHash
+}
+
+// TokenFromSNI recovers a device token from a DoT server name. Android's Private
+// DNS accepts only a hostname and cannot carry a token in a path, so the token
+// rides in the label: <token>.dns.example. Returns the same sha256 form the DoH
+// path produces, or "" when the name is the bare resolver hostname.
+//
+// This is what lets Android participate in per-device access at all; without it
+// turning on token enforcement would simply cut every Android user off.
+func (r *Router) TokenFromSNI(sni string) string {
+	r.mu.RLock()
+	cfg := r.cfg
+	r.mu.RUnlock()
+	if cfg == nil || sni == "" {
+		return ""
+	}
+	base := strings.ToLower(strings.TrimSuffix(cfg.DNS.DoTHostname, "."))
+	sni = strings.ToLower(strings.TrimSuffix(sni, "."))
+	if base == "" || sni == base || !strings.HasSuffix(sni, "."+base) {
+		return ""
+	}
+	label := strings.TrimSuffix(sni, "."+base)
+	if label == "" || strings.Contains(label, ".") {
+		return "" // only one level below the resolver name is a token
+	}
+	sum := sha256.Sum256([]byte(label))
+	return hex.EncodeToString(sum[:])
 }
 
 // Config returns the active node config.

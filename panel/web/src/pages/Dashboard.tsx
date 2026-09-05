@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { api, ago, fmtTime, plural, timeTitle } from "../api";
-import { Card, ErrorState, Notice, Spinner, StatusBadge, usePoll } from "../ui";
+import { Card, ErrorState, Notice, Section, Spinner, Stat, StatusBadge, usePoll } from "../ui";
+import { IconArrowIn, IconArrowOut, IconGrid, IconLayers } from "../icons";
 
 type NodeStat = { role: string; status: string; count: number; last_seen: string | null };
 type SvcStat = {
@@ -81,17 +82,24 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid g4">
-        <Tile label="Входные ноды" value={`${healthy("ingress")}/${total("ingress")}`}
-          note="нод принимают DNS и HTTPS" state={ingressOk ? "ok" : "bad"} />
-        <Tile label="Выходные ноды" value={`${healthy("egress")}/${total("egress")}`}
-          note="нод выходят к сервисам" state={egressOk ? "ok" : "bad"} />
-        <Tile label="Сервисы" value={String(data.services.filter((s) => s.enabled).length)}
-          note={plural(data.services.reduce((a, s) => a + s.rules, 0), "правило", "правила", "правил")} />
-        <Tile label="Расхождение" value={String(data.nodes_with_drift)}
-          note="нод ещё не применили конфигурацию" state={data.nodes_with_drift ? "warn" : "ok"} />
-      </div>
+      <Section title="Инфраструктура" note="что сейчас держит трафик">
+        <div className="grid g4">
+          <Stat icon={<IconArrowIn />} tone={ingressOk ? "direct" : "bad"} label="Входные ноды"
+            value={`${healthy("ingress")}/${total("ingress")}`} note="принимают DNS и HTTPS"
+            state={ingressOk ? "ok" : "bad"} />
+          <Stat icon={<IconArrowOut />} tone={egressOk ? "managed" : "bad"} label="Выходные ноды"
+            value={`${healthy("egress")}/${total("egress")}`} note="выходят к сервисам"
+            state={egressOk ? "ok" : "bad"} />
+          <Stat icon={<IconGrid />} tone="violet" label="Сервисы"
+            value={String(data.services.filter((s) => s.enabled).length)}
+            note={plural(data.services.reduce((a, s) => a + s.rules, 0), "правило", "правила", "правил")} />
+          <Stat icon={<IconLayers />} tone={data.nodes_with_drift ? "warn" : "ok"} label="Расхождение"
+            value={String(data.nodes_with_drift)} note="нод ещё не применили конфигурацию"
+            state={data.nodes_with_drift ? "warn" : "ok"} />
+        </div>
+      </Section>
 
+      <Section title="Что происходит" note="сервисы и лента control plane">
       <div className="grid g2">
         <Card title="Сервисы" eyebrow="что проходит через инфраструктуру" tight
           actions={<Link className="btn sm" to="/services">Настроить</Link>}>
@@ -138,7 +146,7 @@ export default function Dashboard() {
           ) : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {data.events.slice(0, 9).map((e) => (
-                <li key={e.id} style={{ padding: "10px 16px", borderBottom: "1px solid var(--line-soft)" }}>
+                <li key={e.id} style={{ padding: "14px 22px", borderBottom: "1px solid var(--line-soft)" }}>
                   <div className="row" style={{ gap: 8 }}>
                     <span className={`badge ${e.level === "error" ? "bad" : e.level === "warn" ? "warn" : "plain"}`}>
                       {e.component}
@@ -153,8 +161,11 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card title="Состояние нод" eyebrow="по ролям и статусам" tight
-        actions={<Link className="btn sm" to="/nodes">Управление</Link>}>
+      </Section>
+
+      <Section title="Ноды" note="по ролям и статусам" actions={<Link className="btn sm" to="/nodes">Управление</Link>}>
+      <Card tight
+        >
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Роль</th><th>Статус</th><th>Нод</th><th>Последний контакт</th></tr></thead>
@@ -178,6 +189,7 @@ export default function Dashboard() {
           </table>
         </div>
       </Card>
+      </Section>
     </>
   );
 }
@@ -193,14 +205,4 @@ function Hop({ name, meta, bad }: { name: string; meta: string; bad?: boolean })
 
 function Wire({ kind, live }: { kind: "managed" | "direct"; live: boolean }) {
   return <span className={`wire ${kind} ${live ? "live" : "dead"}`} />;
-}
-
-function Tile({ label, value, note, state }: { label: string; value: string; note: string; state?: string }) {
-  return (
-    <div className="card tile">
-      <div className="tile-label">{label}</div>
-      <div className={`tile-value ${state ?? ""}`}>{value}</div>
-      <div className="tile-note">{note}</div>
-    </div>
-  );
 }

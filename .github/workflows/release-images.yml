@@ -21,7 +21,7 @@ permissions:
   packages: write
 
 env:
-  VERSION: "2.0.2"
+  VERSION: "2.0.3"
   REGISTRY: ghcr.io
   OWNER: vitalyor
 
@@ -65,6 +65,18 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-node:${{ env.VERSION }}
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-node:latest
             ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-node:sha-${{ steps.sha.outputs.short }}
+
+      - name: Страница подписки
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: subpage/deploy/Dockerfile
+          push: true
+          build-args: VERSION=${{ env.VERSION }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-subscription-page:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-subscription-page:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/smartdns-subscription-page:sha-${{ steps.sha.outputs.short }}
 
       - name: Unbound
         uses: docker/build-push-action@v6

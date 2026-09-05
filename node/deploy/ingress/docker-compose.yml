@@ -12,12 +12,12 @@ x-logging: &logging
     max-file: "${LOG_MAX_FILE:-3}"
 
 x-node-image: &node-image
-  image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-2.0.2}
+  image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-2.0.3}
   build:
     context: ../../..
     dockerfile: node/deploy/Dockerfile
     args:
-      VERSION: ${SMARTDNS_VERSION:-2.0.2}
+      VERSION: ${SMARTDNS_VERSION:-2.0.3}
   restart: unless-stopped
   logging: *logging
   read_only: true
@@ -47,6 +47,11 @@ services:
       TLS_DIR: /etc/smartdns/tls
       # The HTTP-01 challenge binds :80 only for the seconds an issuance runs.
       ACME_HTTP_ADDR: ":80"
+      # Live query-log source: the agent proxies dns-frontend's ring to the panel
+      # (GET /v1/dns/log). Internal to the compose network; never published.
+      DNS_LOG_URL: http://dns-frontend:9053/log
+      # Per-device tallies (how many queries, when last seen). No domains.
+      DNS_COUNTERS_URL: http://dns-frontend:9053/counters
     ports:
       # The panel connects here. Open ONLY to the panel IP in the firewall.
       - "${MGMT_BIND:-3333}:3333"
@@ -64,7 +69,7 @@ services:
       start_period: 30s
 
   unbound:
-    image: ghcr.io/vitalyor/smartdns-unbound:${SMARTDNS_VERSION:-2.0.2}
+    image: ghcr.io/vitalyor/smartdns-unbound:${SMARTDNS_VERSION:-2.0.3}
     build:
       context: ../../..
       dockerfile: node/deploy/unbound/Dockerfile

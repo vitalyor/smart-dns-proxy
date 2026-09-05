@@ -1,0 +1,42 @@
+# Google AI — Gemini, AI Studio, NotebookLM, Jules, Labs
+#
+# ВАЖНО: сюда попадают ТОЛЬКО домены, которые реально нужно выводить через
+# зарубежный egress (заблокированные / привязанные к сессии). Общий Google-CDN,
+# шрифты и аватарки (gstatic, googleusercontent, fonts.googleapis, apis.google.com,
+# www.googleapis.com) НЕ включаем — они не заблокированы, работают напрямую, а
+# прогон их через egress ломает загрузку страниц (QUIC-фолбэк, лишняя задержка).
+#
+# Голая строка = домен и все поддомены. Точный хост — full:host.
+# Источник: официальный «Gemini app firewall settings» (отфильтровано под reroute).
+
+# --- Gemini (веб) ---
+gemini.google.com
+gemini.google
+
+# --- AI Studio / Gemini API / семейство ---
+aistudio.google.com
+ai.google.dev
+generativeai.google
+makersuite.google.com
+bard.google.com
+generativelanguage.googleapis.com
+notebooklm.google
+notebooklm.google.com
+jules.google
+jules.google.com
+labs.google
+deepmind.google
+deepmind.com
+
+# --- Все приватные API-бэкенды Google (-pa): сигналинг, конфиг, чат и т.п.
+#     Ловим regex-ом, иначе новый бэкенд утечёт напрямую и порвёт сессию по IP.
+regexp:-pa\.googleapis\.com$
+regexp:-pa\.clients6\.google\.com$
+aida.googleapis.com
+
+# --- Авторизация и сессия. Без них часть запросов Gemini уходит с реального IP,
+#     а остальное — через egress → Google видит «подозрительный трафик» (IP≠IP).
+#     Побочка: вход в Google-аккаунт пойдёт через egress (может быть «вход из США»).
+securetoken.googleapis.com
+accounts.google.com
+regexp:^clients[0-9]+\.google\.com$

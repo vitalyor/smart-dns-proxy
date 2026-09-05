@@ -1,6 +1,6 @@
 # SmartDNS — сборка, тесты и локальный стенд.
 SHELL := /bin/bash
-VERSION ?= 2.0.2
+VERSION ?= 2.0.3
 GOFLAGS ?= -trimpath
 LDFLAGS := -s -w -X main.version=$(VERSION)
 LAB := deploy/examples/lab/docker-compose.yml
@@ -14,7 +14,8 @@ build: web ## Собрать все бинарники в ./bin
 	@mkdir -p bin
 	CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/ \
 		./panel/cmd/panel-api ./agent/cmd/node-agent \
-		./node/cmd/dns-frontend ./node/cmd/sni-proxy ./node/cmd/egress-relay
+		./node/cmd/dns-frontend ./node/cmd/sni-proxy ./node/cmd/egress-relay \
+		./subpage/cmd/subscription-page
 	@echo "→ bin/"
 
 .PHONY: web
@@ -57,10 +58,11 @@ images: ## Собрать production-образы
 	docker compose build
 	docker compose -f node/deploy/ingress/docker-compose.yml build
 	docker compose -f node/deploy/egress/docker-compose.yml build
+	docker compose -f subpage/deploy/docker-compose.yml build
 
 .PHONY: openapi
-openapi: ## Проверить, что спецификация OpenAPI разбирается
-	@python3 -c "import json,sys; json.load(open('docs/openapi.json')); print('openapi.json: ok')"
+openapi: ## Спецификация разбирается и покрывает все маршруты панели
+	@python3 scripts/openapi-check.py
 
 .PHONY: check
 check: lint test openapi ## Всё, что должно проходить перед коммитом

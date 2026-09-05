@@ -1,0 +1,17 @@
+# xAI — Grok (grok.com, x.ai) + X / Twitter (Grok встроен в x.com)
+#
+# Только домены, которым нужен зарубежный egress. Голая строка = домен и все
+# поддомены (x.ai → api./auth.x.ai; grok.com → cli-chat-proxy./code./assets.grok.com).
+# Точный хост — full:host.
+# Источники: xAI «Enterprise Deployments» (docs.x.ai/build/enterprise) + домены X.
+
+# --- xAI / Grok ---
+x.ai
+grok.com
+xai.com
+
+# --- X (Twitter) — Grok живёт внутри x.com ---
+x.com
+twitter.com
+t.co
+twimg.com

@@ -20,7 +20,23 @@ const (
 	KindExact  Kind = "exact"
 	KindSuffix Kind = "suffix"
 	KindRegex  Kind = "regex"
+
+	// Отрицательные правила. Исключение, которое нельзя вычесть буквально
+	// («весь example.com через прокси, но private.example.com — напрямую»),
+	// доезжает до матчера как вычитание, а не исчезает при слиянии. Эти виды
+	// рождаются только в Merge; из источников и вручную их не пишут.
+	KindNotExact  Kind = "not_exact"
+	KindNotSuffix Kind = "not_suffix"
+	KindNotRegex  Kind = "not_regex"
 )
+
+// negate maps a positive kind to its subtracting twin.
+var negate = map[Kind]Kind{KindExact: KindNotExact, KindSuffix: KindNotSuffix, KindRegex: KindNotRegex}
+
+// IsNegative reports whether an entry subtracts instead of adds.
+func (k Kind) IsNegative() bool {
+	return k == KindNotExact || k == KindNotSuffix || k == KindNotRegex
+}
 
 type Entry struct {
 	Kind  Kind   `json:"kind"`
@@ -186,8 +202,12 @@ func parseOne(line string, allowRegex bool) (Entry, error) {
 	case strings.ContainsAny(line, "*?/"):
 		return Entry{}, errors.New("unsupported wildcard form")
 	default:
+		// A bare domain means "this domain and everything under it" — the way a
+		// person reading "unblock openai.com" expects it to work, and what the
+		// community lists (v2fly, itdog) assume. Exact-host matching is the
+		// explicit `full:` form.
 		v, err := NormalizeHost(line)
-		return Entry{KindExact, v}, err
+		return Entry{KindSuffix, v}, err
 	}
 }
 
@@ -214,11 +234,22 @@ func Sort(es []Entry) {
 	})
 }
 
-// Merge applies `(union(includes) ∪ manualAdd) − union(excludes) − manualExclude`.
+// Merge applies `(union(includes) ∪ manualAdd) − union(excludes) − manualExclude`
+// and keeps the exclusions that cannot be applied by deletion as negative
+// entries.
+//
+// Deleting rows only works when the excluded name is literally in the list.
+// «Исключить private.example.com» при включённом суффиксе example.com удалять
+// нечего — и раньше такое исключение молча не работало: матчер по суффиксу
+// всё равно забирал поддомен. Теперь оно доезжает до матчера вычитанием и
+// действует одинаково в DNS, на входе и в списке разрешённых на выходе.
 func Merge(includes, excludes []Entry) []Entry {
 	ex := map[Entry]bool{}
 	exSuffix := map[string]bool{}
 	for _, e := range excludes {
+		if e.Kind.IsNegative() {
+			continue // отрицательные виды рождаются здесь, на вход не принимаются
+		}
 		ex[e] = true
 		if e.Kind == KindSuffix {
 			exSuffix[e.Value] = true
@@ -236,6 +267,25 @@ func Merge(includes, excludes []Entry) []Entry {
 		}
 		seen[e] = true
 		out = append(out, e)
+	}
+	// Что из исключений всё ещё накрыто оставшимися правилами — то оставляем
+	// вычитанием. Регулярное выражение оставляем всегда: доказать, что оно
+	// больше ни на что не влияет, дешевле не пытаться.
+	m := NewSet(out).Compile()
+	for _, e := range excludes {
+		if e.Kind.IsNegative() {
+			continue
+		}
+		bites := e.Kind == KindRegex || m.Match(e.Value)
+		if !bites {
+			continue
+		}
+		n := Entry{negate[e.Kind], e.Value}
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
 	}
 	Sort(out)
 	return out
@@ -268,9 +318,17 @@ func Hash(es []Entry) string {
 
 // Counts summarizes an entry list.
 func Counts(es []Entry) map[string]int {
-	c := map[string]int{"exact": 0, "suffix": 0, "regex": 0, "total": len(es)}
+	// total — это размер набора для человека: сколько доменов он забирает.
+	// Вычитающие правила считаются отдельно, иначе исключение выглядело бы
+	// как рост списка.
+	c := map[string]int{"exact": 0, "suffix": 0, "regex": 0, "excluded": 0, "total": 0}
 	for _, e := range es {
+		if e.Kind.IsNegative() {
+			c["excluded"]++
+			continue
+		}
 		c[string(e.Kind)]++
+		c["total"]++
 	}
 	return c
 }

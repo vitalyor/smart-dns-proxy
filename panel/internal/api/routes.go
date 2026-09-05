@@ -39,6 +39,7 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("DELETE /nodes/{id}", s.wrap("nodes.delete", v("owner", s.deleteNode)))
 	api.HandleFunc("POST /nodes/{id}/maintenance", s.wrap("nodes.maintenance", v("operator", s.nodeMaintenance)))
 	api.HandleFunc("POST /nodes/{id}/certificate", s.wrap("nodes.certificate", v("operator", s.nodeCertificate)))
+	api.HandleFunc("GET /nodes/{id}/dns-log", s.wrap("nodes.dnslog", v("viewer", s.nodeDNSLog)))
 	api.HandleFunc("POST /nodes", s.wrap("nodes.create", v("operator", s.createNode)))
 
 	// --- groups ---
@@ -59,6 +60,11 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /services", s.wrap("services.create", v("operator", s.createService)))
 	api.HandleFunc("POST /services/wizard", s.wrap("services.wizard", v("operator", s.serviceWizard)))
 	api.HandleFunc("PATCH /services/{id}", s.wrap("services.patch", v("operator", s.patchService)))
+	api.HandleFunc("PATCH /services/{id}/domains", s.wrap("services.domains", v("operator", s.setServiceDomains)))
+	api.HandleFunc("GET /services/{id}/sources", s.wrap("services.sources.list", v("viewer", s.listServiceSources)))
+	api.HandleFunc("POST /services/{id}/sources", s.wrap("services.source.add", v("operator", s.addServiceSource)))
+	api.HandleFunc("DELETE /services/{id}/sources/{source_id}", s.wrap("services.source.delete", v("operator", s.deleteServiceSource)))
+	api.HandleFunc("POST /services/{id}/refresh", s.wrap("services.refresh", v("operator", s.refreshService)))
 	api.HandleFunc("DELETE /services/{id}", s.wrap("services.delete", v("operator", s.deleteService)))
 
 	// --- rule sets ---
@@ -81,13 +87,46 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /revisions/{id}/deploy", s.wrap("revisions.deploy", v("operator", s.deployRevision)))
 	api.HandleFunc("POST /revisions/{id}/rollback", s.wrap("revisions.rollback", v("operator", s.rollbackRevision)))
 
-	// --- devices & settings ---
-	api.HandleFunc("GET /device-profiles", s.wrap("devices.list", v("viewer", s.listDeviceProfiles)))
-	api.HandleFunc("POST /device-profiles", s.wrap("devices.create", v("operator", s.createDeviceProfile)))
-	api.HandleFunc("DELETE /device-profiles/{id}", s.wrap("devices.delete", v("operator", s.deleteDeviceProfile)))
-	api.HandleFunc("GET /device-profiles/{id}/download", s.wrap("devices.download", v("viewer", s.downloadDeviceProfile)))
+	// --- subscribers (operator) ---
+	api.HandleFunc("GET /subscribers", s.wrap("subscribers.list", v("viewer", s.listSubscribers)))
+	api.HandleFunc("POST /subscribers", s.wrap("subscribers.create", v("operator", s.createSubscriber)))
+	api.HandleFunc("PATCH /subscribers/{id}", s.wrap("subscribers.patch", v("operator", s.patchSubscriber)))
+	api.HandleFunc("DELETE /subscribers/{id}", s.wrap("subscribers.delete", v("operator", s.deleteSubscriber)))
+	api.HandleFunc("POST /subscribers/{id}/rotate", s.wrap("subscribers.rotate", v("operator", s.rotateSubscriber)))
+	api.HandleFunc("GET /subscribers/{id}/devices", s.wrap("subscribers.devices", v("viewer", s.listSubscriberDevices)))
+	api.HandleFunc("POST /subscribers/{id}/devices", s.wrap("subscribers.device.add", v("operator", s.addSubscriberDevice)))
+	api.HandleFunc("DELETE /subscribers/{id}/devices/{device_id}", s.wrap("subscribers.device.delete", v("operator", s.deleteSubscriberDevice)))
+	api.HandleFunc("GET /subscribers/{id}/devices/{device_id}/download", s.wrap("subscribers.device.download", v("viewer", s.downloadSubscriberDevice)))
+
+	// --- machine keys (owner) ---
+	api.HandleFunc("GET /api-keys", s.wrap("apikeys.list", v("owner", s.listAPIKeys)))
+	api.HandleFunc("POST /api-keys", s.wrap("apikeys.create", v("owner", s.createAPIKey)))
+	api.HandleFunc("DELETE /api-keys/{id}", s.wrap("apikeys.revoke", v("owner", s.revokeAPIKey)))
+
+	// --- subscription service (scoped key, no session) ---
+	k := s.requireScope
+	api.HandleFunc("GET /sub/{short_id}", s.wrap("sub.status", k(ScopeSubRead, s.subStatus)))
+	api.HandleFunc("POST /sub/{short_id}/devices", s.wrap("sub.device.add", k(ScopeSubDevices, s.subAddDevice)))
+	api.HandleFunc("DELETE /sub/{short_id}/devices/{device_id}", s.wrap("sub.device.delete", k(ScopeSubDevices, s.subDeleteDevice)))
+	api.HandleFunc("GET /sub/{short_id}/devices/{device_id}/config", s.wrap("sub.device.config", k(ScopeSubRead, s.subDeviceConfig)))
+	api.HandleFunc("GET /sub/{short_id}/devices/{device_id}/instructions", s.wrap("sub.device.instructions", k(ScopeSubInstructions, s.subDeviceInstructions)))
+	api.HandleFunc("GET /sub/{short_id}/assets/{id}", s.wrap("sub.asset", k(ScopeSubInstructions, s.subAsset)))
+
+	// --- instructions (operator) ---
+	api.HandleFunc("GET /instructions", s.wrap("instructions.list", v("viewer", s.listInstructions)))
+	api.HandleFunc("PUT /instructions/{platform}", s.wrap("instructions.put", v("operator", s.putInstruction)))
+	api.HandleFunc("POST /instructions/preview", s.wrap("instructions.preview", v("operator", s.previewInstruction)))
+	api.HandleFunc("POST /instruction-assets", s.wrap("instructions.asset.upload", v("operator", s.uploadAsset)))
+	api.HandleFunc("GET /instruction-assets/{id}", s.wrap("instructions.asset", v("viewer", s.serveAsset)))
+
+	// --- settings ---
 	api.HandleFunc("GET /settings", s.wrap("settings.get", v("viewer", s.getSettings)))
 	api.HandleFunc("PUT /settings", s.wrap("settings.put", v("owner", s.putSettings)))
+
+	// --- certificates (owner) ---
+	api.HandleFunc("GET /certificates", s.wrap("certificates.status", v("viewer", s.certificatesStatus)))
+	api.HandleFunc("PUT /certificates/cloudflare-token", s.wrap("certificates.token", v("owner", s.putCloudflareToken)))
+	api.HandleFunc("POST /certificates/issue", s.wrap("certificates.issue", v("owner", s.issueResolverCert)))
 
 	// --- backup / restore (moves the whole panel to a new host) ---
 	api.HandleFunc("POST /backup", s.wrap("backup.create", v("owner", s.handleBackup)))
