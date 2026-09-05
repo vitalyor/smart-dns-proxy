@@ -49,6 +49,8 @@ type Server struct {
 	queryLog bool
 	// log is the always-on in-memory ring the panel reads for the live Logs view.
 	log *ring
+	// counts tallies queries per device token — how many and when, never what.
+	counts *counters
 }
 
 // New builds a server bound to a router.
@@ -66,6 +68,7 @@ func New(r *Router) *Server {
 		inflight: make(chan struct{}, maxc),
 		queryLog: os.Getenv("SMARTDNS_QUERY_LOG") == "1",
 		log:      newRing(1000),
+		counts:   newCounters(),
 	}
 	s.upstream.Store(&c.DNS.Upstream)
 	if s.queryLog {
@@ -113,6 +116,7 @@ func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string)
 		if resp != nil {
 			rcode = dns.RcodeToString[resp.Rcode]
 		}
+		s.counts.hit(dohToken, start)
 		s.log.add(LogEntry{
 			TS: start.UnixMilli(), Client: client.String(), Proto: proto, Name: qname, Type: qtype,
 			Decision: decision, Rcode: rcode, MS: took.Milliseconds(),

@@ -158,6 +158,7 @@ func main() {
 	if *logAddr != "" {
 		lm := http.NewServeMux()
 		lm.HandleFunc("/log", srv.LogHandler())
+		lm.HandleFunc("/counters", srv.CountersHandler())
 		go serveHTTP(&http.Server{Addr: *logAddr, Handler: lm, ReadHeaderTimeout: 5 * time.Second}, false, "query-log")
 	}
 
