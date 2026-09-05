@@ -64,6 +64,10 @@ func (s *Server) subStatus(w http.ResponseWriter, r *http.Request) error {
 		"types":        deviceTypes,
 		// Lets the page tell "same as cached" from "refetch" without a restart.
 		"instructions_version": s.instructionsVersion(ctx),
+		// Оформление страницы живёт в настройках панели, а не в образе сервиса:
+		// поменять имя или контакт поддержки можно без пересборки и перезапуска.
+		"brand":   getSetting(ctx, s.DB, "subscription_brand", ""),
+		"support": getSetting(ctx, s.DB, "subscription_support", ""),
 	})
 	return nil
 }

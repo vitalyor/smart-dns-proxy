@@ -62,10 +62,14 @@
   .howto pre code{border:0;background:none;padding:0}
   .howto blockquote{margin:10px 0;padding:8px 0 8px 14px;border-left:3px solid var(--line);color:var(--dim)}
   .howto img{max-width:100%;border-radius:10px;border:1px solid var(--line)}
+  .brand{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+  .foot{margin-top:26px;font-size:14px;color:var(--dim);text-align:center}
+  .foot a{color:var(--accent)}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="brand" id="brand" hidden></div>
   <h1 id="title">Мои устройства</h1>
   <p class="sub" id="subtitle">Загружаем…</p>
 
@@ -96,6 +100,8 @@
   </div>
 
   <div class="card" id="error-card" hidden><div class="alert bad" id="error-text"></div></div>
+
+  <p class="foot" id="support" hidden></p>
 </div>
 
 <script>
@@ -129,6 +135,7 @@
   function render(){
     var s = state;
     $("title").textContent = s.name || "Мои устройства";
+    brandAndSupport(s);
     var st = s.active
       ? '<span class="pill ok">подписка активна</span>'
       : '<span class="pill bad">' + (s.enabled === false ? "отключена"
@@ -168,6 +175,21 @@
     });
     $("devices-card").hidden = false;
     $("add-card").hidden = false;
+  }
+
+  // Имя сервиса и контакт поддержки задаются в панели и приезжают со статусом,
+  // поэтому меняются без пересборки страницы.
+  function brandAndSupport(s){
+    if(s.brand){ $("brand").textContent = s.brand; $("brand").hidden = false; document.title = s.brand; }
+    var sup = (s.support || "").trim();
+    if(!sup) return;
+    var href = /^https?:\/\//.test(sup) ? sup
+             : sup.charAt(0) === "@" ? "https://t.me/" + sup.slice(1)
+             : "";
+    $("support").innerHTML = "Нужна помощь? " + (href
+      ? '<a href="' + esc(href) + '" rel="noopener noreferrer">' + esc(sup) + '</a>'
+      : esc(sup));
+    $("support").hidden = false;
   }
 
   function esc(s){ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
