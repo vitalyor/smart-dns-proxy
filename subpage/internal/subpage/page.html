@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Мои устройства</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#14171c; --dim:#5c6570; --line:#e3e7ec;
+    --accent:#2f6df6; --ok:#158f5a; --warn:#b26a00; --bad:#c2372c;
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#101317; --card:#171b21; --ink:#e8ecf1; --dim:#98a2ae; --line:#252b33;
+           --accent:#5b8cff; --ok:#38b57e; --warn:#d99423; --bad:#e0655a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 18px 64px}
+  h1{font-size:24px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:14px;margin:0 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+  .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+  .pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+  .dev{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+  .dev:first-of-type{border-top:0}
+  .dev-name{font-weight:600}
+  .dev-meta{color:var(--dim);font-size:13px}
+  .btn{appearance:none;border:1px solid var(--line);background:transparent;color:var(--ink);
+    font:inherit;font-size:14px;padding:8px 14px;border-radius:10px;cursor:pointer}
+  .btn:hover{border-color:var(--dim)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+  .btn:disabled{opacity:.5;cursor:default}
+  input,select{font:inherit;font-size:15px;padding:9px 11px;border-radius:10px;
+    border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%}
+  label{display:block;font-size:13px;color:var(--dim);margin-bottom:5px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .note{font-size:13px;color:var(--dim);margin-top:10px}
+  .alert{border-radius:10px;padding:11px 13px;font-size:14px;margin-top:12px;
+    border:1px solid var(--line);background:var(--bg)}
+  .alert.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+  .alert.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+  code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+  h2{font-size:15px;margin:0 0 12px;letter-spacing:.02em;text-transform:uppercase;color:var(--dim)}
+  .muted{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">Мои устройства</h1>
+  <p class="sub" id="subtitle">Загружаем…</p>
+
+  <div class="card" id="devices-card" hidden>
+    <div class="row"><h2 style="margin:0">Устройства</h2><div class="spacer"></div>
+      <span class="muted" id="count" style="font-size:13px"></span></div>
+    <div id="devices"></div>
+  </div>
+
+  <div class="card" id="add-card" hidden>
+    <h2>Добавить устройство</h2>
+    <div class="grid">
+      <div><label for="dname">Название</label>
+        <input id="dname" placeholder="iPhone Виталия" maxlength="60"></div>
+      <div><label for="dtype">Платформа</label>
+        <select id="dtype">
+          <option value="apple_doh">iPhone, iPad или Mac</option>
+          <option value="windows_doh">Windows</option>
+          <option value="android_dot">Android</option>
+          <option value="router">Роутер</option>
+        </select></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" id="add">Добавить</button>
+      <span class="muted" style="font-size:13px" id="limit-hint"></span>
+    </div>
+    <div id="add-msg"></div>
+  </div>
+
+  <div class="card" id="error-card" hidden><div class="alert bad" id="error-text"></div></div>
+</div>
+
+<script>
+(function(){
+  var base = location.pathname.replace(/\/+$/, "");
+  var $ = function(id){ return document.getElementById(id); };
+  var state = null;
+
+  function api(path, opts){
+    return fetch(base + path, opts).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(b){
+        return { ok: r.ok, status: r.status, body: b };
+      });
+    });
+  }
+
+  function platform(t){
+    return { apple_doh:"Apple", apple_dot:"Apple (DoT)", windows_doh:"Windows",
+             android_dot:"Android", router:"Роутер", plain:"Другое" }[t] || t;
+  }
+
+  function when(ms){
+    if(!ms) return "ещё не подключалось";
+    var d = (Date.now() - new Date(ms).getTime())/1000;
+    if(d < 90) return "только что";
+    if(d < 3600) return Math.round(d/60) + " мин назад";
+    if(d < 86400) return Math.round(d/3600) + " ч назад";
+    return Math.round(d/86400) + " дн назад";
+  }
+
+  function render(){
+    var s = state;
+    $("title").textContent = s.name || "Мои устройства";
+    var st = s.active
+      ? '<span class="pill ok">подписка активна</span>'
+      : '<span class="pill bad">' + (s.enabled === false ? "отключена"
+          : (s.expires_at && new Date(s.expires_at) < new Date()) ? "срок истёк"
+          : "исчерпан лимит запросов") + '</span>';
+    var used = s.query_limit
+      ? " · запросов: " + s.queries_used.toLocaleString("ru-RU") + " из " + s.query_limit.toLocaleString("ru-RU")
+      : "";
+    $("subtitle").innerHTML = st + '<span class="muted">' + used + '</span>';
+
+    var devs = s.devices || [];
+    $("count").textContent = devs.length + " из " + s.device_limit;
+    $("limit-hint").textContent = devs.length >= s.device_limit
+      ? "Достигнут лимит — удалите ненужное" : "";
+    $("add").disabled = devs.length >= s.device_limit;
+
+    $("devices").innerHTML = devs.length ? devs.map(function(d){
+      return '<div class="dev">'
+        + '<div style="flex:1;min-width:0">'
+        +   '<div class="dev-name">' + esc(d.name) + '</div>'
+        +   '<div class="dev-meta">' + platform(d.type) + ' · ' + when(d.last_seen_at)
+        +     (d.queries_total ? ' · ' + d.queries_total.toLocaleString("ru-RU") + ' запросов' : '')
+        +   '</div>'
+        + '</div>'
+        + '<a class="btn" href="' + base + '/api/devices/' + d.id + '/config">Скачать</a>'
+        + '<button class="btn danger" data-del="' + d.id + '">Удалить</button>'
+        + '</div>';
+    }).join("") : '<p class="muted" style="margin:6px 0 0">Пока ни одного. Добавьте первое ниже.</p>';
+
+    Array.prototype.forEach.call(document.querySelectorAll("[data-del]"), function(b){
+      b.onclick = function(){ removeDevice(b.getAttribute("data-del"), b); };
+    });
+    $("devices-card").hidden = false;
+    $("add-card").hidden = false;
+  }
+
+  function esc(s){ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+
+  function fail(msg){
+    $("error-text").textContent = msg;
+    $("error-card").hidden = false;
+    $("subtitle").textContent = "";
+  }
+
+  function load(){
+    api("/api/status").then(function(r){
+      if(!r.ok){
+        fail(r.status === 404 ? "Ссылка не найдена. Проверьте адрес или попросите новую."
+                              : (r.body.error || "Не удалось загрузить данные."));
+        return;
+      }
+      state = r.body; $("error-card").hidden = true; render();
+    }).catch(function(){ fail("Нет связи с сервером."); });
+  }
+
+  function msg(html){ $("add-msg").innerHTML = html; }
+
+  $("add").onclick = function(){
+    var name = $("dname").value.trim();
+    if(!name){ msg('<div class="alert bad">Укажите название устройства.</div>'); return; }
+    $("add").disabled = true;
+    msg("");
+    api("/api/devices", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ name: name, type: $("dtype").value })
+    }).then(function(r){
+      $("add").disabled = false;
+      if(!r.ok){ msg('<div class="alert bad">' + esc(r.body.message || r.body.error || "Не удалось добавить.") + '</div>'); return; }
+      $("dname").value = "";
+      msg('<div class="alert ok">Устройство создано. Доступ включится в течение минуты — скачайте настройку и установите её.</div>');
+      load();
+    }).catch(function(){ $("add").disabled = false; msg('<div class="alert bad">Нет связи с сервером.</div>'); });
+  };
+
+  function removeDevice(id, btn){
+    if(!confirm("Удалить устройство? Оно перестанет работать.")) return;
+    btn.disabled = true;
+    api("/api/devices/" + id, { method: "DELETE" }).then(function(){ load(); })
+      .catch(function(){ btn.disabled = false; });
+  }
+
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

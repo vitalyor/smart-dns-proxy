@@ -24,26 +24,6 @@ type subDeviceView struct {
 	DoTHost      string     `json:"dot_host,omitempty"`
 }
 
-// deviceAddresses renders the personal addresses stored in a profile. The token
-// travels only here, to the person who owns it.
-func deviceAddresses(p store.DeviceProfile) (dohURL, dotHost string) {
-	ep, _ := p.Config["endpoints"].(map[string]any)
-	dohHost, _ := ep["doh_hostname"].(string)
-	dotHost, _ = ep["dot_hostname"].(string)
-	dohPath, _ := ep["doh_path"].(string)
-	if dohPath == "" {
-		dohPath = "/dns-query"
-	}
-	token, _ := p.Config["path_token"].(string)
-	if dohHost != "" {
-		dohURL = "https://" + dohHost + strings.TrimRight(dohPath, "/")
-		if token != "" {
-			dohURL += "/" + token
-		}
-	}
-	return dohURL, dotHost
-}
-
 func (s *Server) subscriberByShortID(r *http.Request) (store.Subscriber, error) {
 	return store.One[store.Subscriber](r.Context(), s.DB,
 		`SELECT * FROM subscribers WHERE short_id=$1`, r.PathValue("short_id"))
@@ -64,7 +44,7 @@ func (s *Server) subStatus(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]subDeviceView, 0, len(devs))
 	for _, d := range devs {
-		doh, dot := deviceAddresses(d)
+		doh, dot, _ := deviceAddressesFull(d)
 		out = append(out, subDeviceView{ID: d.ID, Name: d.Name, Type: d.Type, CreatedAt: d.CreatedAt,
 			LastSeenAt: d.LastSeenAt, QueriesTotal: d.QueriesTotal, DoHURL: doh, DoTHost: dot})
 	}
@@ -175,7 +155,7 @@ func (s *Server) subAddDevice(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	doh, dot := deviceAddresses(p)
+	doh, dot, _ := deviceAddressesFull(p)
 	s.audit(ctx, r, "subscriber.device.added", "device_profile", devID, nil,
 		map[string]any{"subscriber": id, "type": req.Type})
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -204,5 +184,25 @@ func (s *Server) subDeleteDevice(w http.ResponseWriter, r *http.Request) error {
 	s.audit(ctx, r, "subscriber.device.deleted", "device_profile", r.PathValue("device_id"), nil,
 		map[string]any{"subscriber": sub.ID})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	return nil
+}
+
+// subDeviceConfig hands the person their own setup file. Scoped by short_id, so
+// the service's key cannot pull a config belonging to a different subscriber.
+func (s *Server) subDeviceConfig(w http.ResponseWriter, r *http.Request) error {
+	sub, err := s.subscriberByShortID(r)
+	if err != nil {
+		return notFound("subscriber")
+	}
+	p, err := store.One[store.DeviceProfile](r.Context(), s.DB,
+		`SELECT * FROM device_profiles WHERE id=$1 AND subscriber_id=$2`,
+		r.PathValue("device_id"), sub.ID)
+	if err != nil {
+		return notFound("device")
+	}
+	ct, name, body := renderDeviceArtifact(p)
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	_, _ = w.Write(body)
 	return nil
 }
