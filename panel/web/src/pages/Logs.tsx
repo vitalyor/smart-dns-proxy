@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
-import { Card, ErrorState, Notice, Spinner, useAsync } from "../ui";
-import { IconPlay, IconRefresh } from "../icons";
+import { Card, ErrorState, Notice, Spinner, useAsync, Stat, type Tone } from "../ui";
+import { IconPlay, IconRefresh, IconPulse } from "../icons";
 
 type Entry = {
   seq: number; ts: number; client: string; proto: string; name: string;
@@ -218,11 +218,11 @@ function Row({ e }: { e: Entry }) {
   );
 }
 
-function Tile({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
+function Tile({ label, value, tone, icon, hue }: {
+  label: string; value: ReactNode; tone?: string; icon?: ReactNode; hue?: Tone;
+}) {
   return (
-    <div className="card tile">
-      <div className="tile-label">{label}</div>
-      <div className={`tile-value ${tone ?? ""}`}>{value}</div>
-    </div>
+    <Stat icon={icon ?? <IconPulse />} tone={hue ?? "blue"} label={label} value={value}
+      state={tone as "ok" | "warn" | "bad" | "accent" | undefined} />
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, fmtTime, plural, shortHash, timeTitle } from "../api";
-import { Card, ErrorState, Modal, Notice, Spinner, errText, usePoll, useToast } from "../ui";
+import { Card, ErrorState, Modal, Notice, Spinner, Stat, errText, usePoll, useToast } from "../ui";
 import { IconLayers, IconPlay, IconRotate } from "../icons";
 
 type Revision = {
@@ -239,10 +239,5 @@ export default function Revisions() {
 }
 
 function Tile({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="card tile">
-      <div className="tile-label">{label}</div>
-      <div className="tile-value">{value}</div>
-    </div>
-  );
+  return <Stat icon={<IconLayers />} tone="violet" label={label} value={value} />;
 }
