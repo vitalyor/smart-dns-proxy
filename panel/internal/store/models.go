@@ -209,13 +209,50 @@ type User struct {
 	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
 }
 
-// DeviceProfile is a downloadable client setup profile.
+// DeviceProfile is a downloadable client setup profile. SubscriberID is nil for
+// profiles the operator made for themselves, before subscribers existed.
 type DeviceProfile struct {
-	ID        string         `db:"id" json:"id"`
-	Name      string         `db:"name" json:"name"`
-	Type      string         `db:"type" json:"type"`
-	Config    map[string]any `db:"config" json:"config"`
-	RevokedAt *time.Time     `db:"revoked_at" json:"revoked_at"`
-	Version   int64          `db:"version" json:"version"`
-	CreatedAt time.Time      `db:"created_at" json:"created_at"`
+	ID           string         `db:"id" json:"id"`
+	Name         string         `db:"name" json:"name"`
+	Type         string         `db:"type" json:"type"`
+	Config       map[string]any `db:"config" json:"config"`
+	RevokedAt    *time.Time     `db:"revoked_at" json:"revoked_at"`
+	Version      int64          `db:"version" json:"version"`
+	CreatedAt    time.Time      `db:"created_at" json:"created_at"`
+	SubscriberID *string        `db:"subscriber_id" json:"subscriber_id"`
+	QueriesTotal int64          `db:"queries_total" json:"queries_total"`
+	LastSeenAt   *time.Time     `db:"last_seen_at" json:"last_seen_at"`
+}
+
+// Subscriber is an end user who gets a subscription link. The link itself is not
+// stored: the page address is composed as {configured domain}/{ShortID}, so
+// moving the page to another domain touches no rows.
+type Subscriber struct {
+	ID              string     `db:"id" json:"id"`
+	Name            string     `db:"name" json:"name"`
+	Note            string     `db:"note" json:"note"`
+	ShortID         string     `db:"short_id" json:"short_id"`
+	Enabled         bool       `db:"enabled" json:"enabled"`
+	ExpiresAt       *time.Time `db:"expires_at" json:"expires_at"`
+	DeviceLimit     *int       `db:"device_limit" json:"device_limit"`
+	QueryLimit      *int64     `db:"query_limit" json:"query_limit"`
+	QueryPeriod     string     `db:"query_period" json:"query_period"`
+	QueriesUsed     int64      `db:"queries_used" json:"queries_used"`
+	PeriodStartedAt time.Time  `db:"period_started_at" json:"period_started_at"`
+	Version         int64      `db:"version" json:"version"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
+}
+
+// APIKey authenticates a machine client. Scopes are narrow on purpose: the
+// subscription page service must not be able to reach anything but its own
+// subscribers (see ADR 0012).
+type APIKey struct {
+	ID         string     `db:"id" json:"id"`
+	Name       string     `db:"name" json:"name"`
+	KeyHash    string     `db:"key_hash" json:"-"`
+	Scopes     []string   `db:"scopes" json:"scopes"`
+	LastUsedAt *time.Time `db:"last_used_at" json:"last_used_at"`
+	RevokedAt  *time.Time `db:"revoked_at" json:"revoked_at"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
 }
