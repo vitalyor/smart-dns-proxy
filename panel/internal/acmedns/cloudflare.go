@@ -79,18 +79,16 @@ func (c *Cloudflare) call(ctx context.Context, method, path string, body any, ou
 	return nil
 }
 
-// Verify checks the token before anything depends on it, so a wrong or
-// under-privileged token fails with a clear message instead of halfway through
-// an order.
+// Verify checks the token can actually be used. It deliberately does NOT rely on
+// /user/tokens/verify: account-scoped tokens (the newer cfat_ format) return
+// success:false there while still being perfectly usable for zone operations.
+// Listing zones is the real capability we need, so that is what we test.
 func (c *Cloudflare) Verify(ctx context.Context) error {
-	var res struct {
-		Status string `json:"status"`
+	var zones []struct {
+		ID string `json:"id"`
 	}
-	if err := c.call(ctx, http.MethodGet, "/user/tokens/verify", nil, &res); err != nil {
+	if err := c.call(ctx, http.MethodGet, "/zones?per_page=1", nil, &zones); err != nil {
 		return err
-	}
-	if res.Status != "active" {
-		return fmt.Errorf("токен Cloudflare неактивен: %s", res.Status)
 	}
 	return nil
 }
