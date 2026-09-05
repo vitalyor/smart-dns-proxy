@@ -145,6 +145,9 @@ type pollRow struct {
 }
 
 func (s *Server) pollOnce(ctx context.Context) {
+	// Желаемый отпечаток считается один раз на цикл: с ним сверяется то, что
+	// каждая нода реально отдаёт клиентам.
+	wantFP, certPEM, keyPEM := s.desiredResolverCert(ctx)
 	nodes, err := store.Many[pollRow](ctx, s.DB, `
 		SELECT n.id::text, n.name, n.mgmt_address, i.fingerprint, n.desired_revision_id::text, n.role
 		FROM nodes n JOIN node_identities i ON i.node_id = n.id
@@ -179,6 +182,7 @@ func (s *Server) pollOnce(ctx context.Context) {
 		// converges here instead of forcing a configuration rollout.
 		if n.Role == "ingress" {
 			s.reconcileAccess(ctx, t, h.AccessHash)
+			s.reconcileCert(ctx, t, h.ResolverCertFP, wantFP, certPEM, keyPEM)
 		}
 
 		// Drift: the node is behind the revision it should run — re-push.
