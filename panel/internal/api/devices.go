@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -50,6 +52,19 @@ func (s *Server) dnsEndpoints(ctx contextT) map[string]any {
 	}
 }
 
+// newDeviceToken returns a token safe as both a DoH path segment and a DNS label
+// (Android's DoT carries it as the SNI label <token>.<host>). Lowercase hex is
+// LDH-valid and case-stable, so the DoH path (hashed as-is) and the DoT SNI
+// (lowercased before hashing) yield the same hash. base64url would not: its
+// "_" is illegal in a hostname and TLS verification rejects it.
+func newDeviceToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
+
 // deviceTypes are the platforms a profile can target.
 var deviceTypes = []string{"android_dot", "apple_doh", "apple_dot", "windows_doh", "router", "plain"}
 
@@ -62,12 +77,14 @@ func (s *Server) buildDeviceConfig(ctx contextT, typ string) (map[string]any, st
 	cfg := map[string]any{"endpoints": s.dnsEndpoints(ctx)}
 	var token, tokenHash string
 	switch typ {
-	case "apple_doh", "windows_doh", "router":
-		token = auth.RandomToken(18)
+	case "apple_doh", "windows_doh", "router", "android_dot":
+		// Every encrypted profile gets a personal token. DoH carries it in the
+		// path; Android's DoT carries it as the SNI label <token>.<dot host>,
+		// which the wildcard certificate and the node's SNI parsing make work —
+		// so Android takes part in per-device access just like the rest.
+		token = newDeviceToken()
 		tokenHash = hashToken(token)
 		cfg["path_token"] = token
-	case "android_dot":
-		cfg["warning"] = "Android Private DNS не передаёт токен. Для этого профиля резолвер работает в режиме restricted-public-dot: строгие лимиты запросов вместо персональной аутентификации."
 	}
 	return cfg, token, tokenHash
 }
@@ -147,6 +164,11 @@ func deviceAddressesFull(p store.DeviceProfile) (dohURL, dotHost string, v4 []st
 		if token != "" {
 			dohURL += "/" + token
 		}
+	}
+	// Android's Private DNS field takes only a hostname, so the token rides as
+	// the SNI label. The wildcard cert covers it and the node reads it back.
+	if token != "" && dotHost != "" {
+		dotHost = token + "." + dotHost
 	}
 	if raw, ok := endpoints["ingress_ipv4"].([]any); ok {
 		for _, x := range raw {

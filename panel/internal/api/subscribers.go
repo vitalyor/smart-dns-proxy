@@ -187,7 +187,7 @@ func (s *Server) rotateSubscriber(w http.ResponseWriter, r *http.Request) error 
 			if old == "" {
 				continue // DoT-only profile: no token to rotate
 			}
-			tok := auth.RandomToken(18)
+			tok := newDeviceToken()
 			d.Config["path_token"] = tok
 			b, _ := json.Marshal(d.Config)
 			if _, err := s.DB.Exec(ctx,
