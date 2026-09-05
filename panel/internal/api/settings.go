@@ -27,6 +27,10 @@ var defaultSettings = map[string]any{
 	"backup_dir":           "/var/backups/smartdns",
 	"log_level":            "info",
 	"node_log_level":       "info",
+	// Подписка: общий лимит устройств и адрес публичной страницы, из которого
+	// собирается ссылка {адрес}/{short_id} (ADR 0012).
+	"device_limit_default":  3,
+	"subscription_page_url": "",
 }
 
 // SeedSettings inserts missing defaults without touching existing values.
@@ -79,6 +83,7 @@ var settableKeys = map[string]bool{
 	"publish_aaaa": true, "egress_resolver": true, "timezone": true,
 	"quic_policy": true, "backup_dir": true,
 	"log_level": true, "node_log_level": true,
+	"device_limit_default": true, "subscription_page_url": true,
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) error {
