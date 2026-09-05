@@ -51,6 +51,17 @@
   code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
   h2{font-size:15px;margin:0 0 12px;letter-spacing:.02em;text-transform:uppercase;color:var(--dim)}
   .muted{color:var(--dim)}
+  .howto{border-top:1px solid var(--line);margin-top:2px;padding:14px 0 4px;font-size:15px}
+  .howto h2{font-size:16px;text-transform:none;letter-spacing:0;color:var(--ink);margin:0 0 10px}
+  .howto h3{font-size:15px;margin:16px 0 8px}
+  .howto ol,.howto ul{margin:0 0 10px;padding-left:22px}
+  .howto li{margin:5px 0}
+  .howto p{margin:0 0 10px}
+  .howto code{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+  .howto pre{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto}
+  .howto pre code{border:0;background:none;padding:0}
+  .howto blockquote{margin:10px 0;padding:8px 0 8px 14px;border-left:3px solid var(--line);color:var(--dim)}
+  .howto img{max-width:100%;border-radius:10px;border:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -143,12 +154,17 @@
         +   '</div>'
         + '</div>'
         + '<a class="btn" href="' + base + '/api/devices/' + d.id + '/config">Скачать</a>'
+        + '<button class="btn" data-how="' + d.id + '">Как настроить</button>'
         + '<button class="btn danger" data-del="' + d.id + '">Удалить</button>'
-        + '</div>';
+        + '</div>'
+        + '<div class="howto" id="howto-' + d.id + '" hidden></div>';
     }).join("") : '<p class="muted" style="margin:6px 0 0">Пока ни одного. Добавьте первое ниже.</p>';
 
     Array.prototype.forEach.call(document.querySelectorAll("[data-del]"), function(b){
       b.onclick = function(){ removeDevice(b.getAttribute("data-del"), b); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-how]"), function(b){
+      b.onclick = function(){ toggleHowto(b.getAttribute("data-how"), b); };
     });
     $("devices-card").hidden = false;
     $("add-card").hidden = false;
@@ -191,6 +207,22 @@
       load();
     }).catch(function(){ $("add").disabled = false; msg('<div class="alert bad">Нет связи с сервером.</div>'); });
   };
+
+  var howtoCache = {};
+  function toggleHowto(id, btn){
+    var box = $("howto-" + id);
+    if(!box.hidden){ box.hidden = true; btn.textContent = "Как настроить"; return; }
+    btn.textContent = "Скрыть";
+    box.hidden = false;
+    var key = id + ":" + (state && state.instructions_version || "");
+    if(howtoCache[key]){ box.innerHTML = howtoCache[key]; return; }
+    box.innerHTML = '<p class="muted">Загружаем…</p>';
+    api("/api/devices/" + id + "/instructions").then(function(r){
+      if(!r.ok){ box.innerHTML = '<p class="muted">Инструкция недоступна.</p>'; return; }
+      howtoCache[key] = r.body.html;
+      box.innerHTML = r.body.html;
+    }).catch(function(){ box.innerHTML = '<p class="muted">Нет связи с сервером.</p>'; });
+  }
 
   function removeDevice(id, btn){
     if(!confirm("Удалить устройство? Оно перестанет работать.")) return;
