@@ -111,6 +111,24 @@ func (s *Server) alerts(ctx contextT, drift, stale, pending int) []alert {
 			"Включён лабораторный режим: egress может обращаться к приватным адресам",
 			"Отключите LAB_MODE перед выпуском в production."})
 	}
+	// Плановое обновление списка поднимает активную версию, но само на ноды
+	// ничего не выкатывает — и до сих пор об этом никто не сообщал. Список
+	// молча обновлялся, ноды продолжали резолвить по старому, а «расхождение»
+	// оставалось нулевым, потому что назначенную конфигурацию они применили.
+	undeployed, _ := store.Value[int](ctx, s.DB, `
+		SELECT count(*)::int
+		FROM rule_sets rs
+		JOIN rule_set_versions v ON v.id = rs.active_version_id
+		JOIN services sv ON sv.rule_set_id = rs.id AND sv.enabled
+		WHERE v.created_at > COALESCE(
+			(SELECT created_at FROM revisions WHERE state = 'active' ORDER BY sequence DESC LIMIT 1),
+			'epoch'::timestamptz)`)
+	if undeployed > 0 {
+		out = append(out, alert{"warn", "rules_not_deployed",
+			fmt.Sprintf("%d списков доменов обновились после последнего выката", undeployed),
+			"Ноды резолвят по старому списку. Соберите и выкатите конфигурацию, чтобы изменения доехали."})
+	}
+
 	staleRules, _ := store.Value[int](ctx, s.DB, `
 		SELECT count(*)::int FROM rule_sets
 		WHERE update_mode <> 'manual_only'
