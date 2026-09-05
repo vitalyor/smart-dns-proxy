@@ -226,15 +226,37 @@ export function Confirm({ title, body, danger, confirmLabel, onConfirm, onClose 
   );
 }
 
+// navigator.clipboard существует только в защищённом контексте: по https или
+// на localhost. Панель, открытая из локальной сети по адресу вида
+// http://192.168.x.x:8080, защищённой не считается, и там остаётся старый
+// execCommand — некрасивый, но работающий во всех браузерах.
+async function copyText(value: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(value); return true; } catch { /* пробуем запасной путь */ }
+  }
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, value.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+
 export function Copyable({ value, label }: { value: string; label?: string }) {
   const [done, setDone] = useState(false);
   const toast = useToast();
   return (
     <button className="btn sm" onClick={async () => {
-      try {
-        await navigator.clipboard.writeText(value);
+      if (await copyText(value)) {
         setDone(true); setTimeout(() => setDone(false), 1800);
-      } catch { toast({ kind: "warn", title: "Не удалось скопировать", body: "Выделите текст вручную." }); }
+      } else {
+        toast({ kind: "warn", title: "Не удалось скопировать", body: "Выделите текст вручную." });
+      }
     }}>
       {done ? <IconCheck /> : <IconCopy />}{label ?? (done ? "Скопировано" : "Копировать")}
     </button>
