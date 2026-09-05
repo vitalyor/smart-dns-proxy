@@ -37,3 +37,5 @@ export const IconMoon = svg(<><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 
 export const IconLogout = svg(<><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M10 8 6 12l4 4" /><path d="M6 12h10" /></>);
 export const IconKey = svg(<><circle cx="8" cy="12" r="4" /><path d="M12 12h9" /><path d="M17 12v3M20 12v2" /></>);
 export const IconGlobe = svg(<><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3Z" /></>);
+export const IconMenu = svg(<><path d="M4 7h16M4 12h16M4 17h16" /></>);
+export const IconDesktop = svg(<><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M9 20h6M12 16v4" /></>);
