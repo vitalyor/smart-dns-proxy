@@ -5,9 +5,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"log/slog"
@@ -32,6 +34,41 @@ func ReloadingServerConfig(certFile, keyFile string) (*tls.Config, error) {
 		GetCertificate:   func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return r.get() },
 	}
 	return cfg, nil
+}
+
+// LeafInfo returns the certificate the config would hand a client right now.
+// Читать файл недостаточно: между «файл на диске» и «то, что отдаёт слушатель»
+// стоит перезагрузка, и именно её отказ надо уметь заметить.
+func LeafInfo(cfg *tls.Config) (*x509.Certificate, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("no TLS configured")
+	}
+	var cert *tls.Certificate
+	if cfg.GetCertificate != nil {
+		c, err := cfg.GetCertificate(&tls.ClientHelloInfo{})
+		if err != nil {
+			return nil, err
+		}
+		cert = c
+	} else if len(cfg.Certificates) > 0 {
+		cert = &cfg.Certificates[0]
+	}
+	if cert == nil || len(cert.Certificate) == 0 {
+		return nil, fmt.Errorf("no certificate loaded")
+	}
+	if cert.Leaf != nil {
+		return cert.Leaf, nil
+	}
+	return x509.ParseCertificate(cert.Certificate[0])
+}
+
+// Fingerprint is the SHA-256 of the leaf DER, the form panel and node compare.
+func Fingerprint(c *x509.Certificate) string {
+	if c == nil {
+		return ""
+	}
+	sum := sha256.Sum256(c.Raw)
+	return hex.EncodeToString(sum[:])
 }
 
 type certReloader struct {

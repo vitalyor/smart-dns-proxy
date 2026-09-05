@@ -17,36 +17,59 @@ var (
 	ErrIncomplete = errors.New("incomplete ClientHello")
 )
 
-// PeekSNI reads the whole ClientHello record from r into a buffer, returns the
-// server name and the consumed bytes so the caller can replay them.
+// maxRecords bounds how many TLS records one ClientHello may be spread over.
+// A handshake needs one or two; anything beyond that is a peer dripping bytes,
+// and the read deadline the caller sets is the other half of that defence.
+const maxRecords = 8
+
+// PeekSNI reads the ClientHello from r into a buffer, returns the server name
+// and the consumed bytes so the caller can replay them.
+//
+// The handshake may be split across several TLS records — RFC 8446 §5.1 allows
+// it, and DPI-evasion tools (zapret, GoodbyeDPI и подобные) split it on purpose.
+// Reading only the first record dropped exactly those clients, so records are
+// concatenated until the handshake parses or the byte budget runs out.
 func PeekSNI(r io.Reader, maxBytes int) (serverName string, raw []byte, err error) {
 	if maxBytes <= 0 {
 		maxBytes = 16 * 1024
 	}
-	hdr := make([]byte, 5)
-	if _, err = io.ReadFull(r, hdr); err != nil {
-		return "", nil, ErrIncomplete
+	var handshake []byte
+	for i := 0; i < maxRecords; i++ {
+		hdr := make([]byte, 5)
+		if _, err = io.ReadFull(r, hdr); err != nil {
+			return "", raw, ErrIncomplete
+		}
+		if hdr[0] != 0x16 || hdr[1] != 0x03 {
+			return "", append(raw, hdr...), ErrNotTLS
+		}
+		length := int(binary.BigEndian.Uint16(hdr[3:5]))
+		if length <= 0 || len(raw)+5+length > maxBytes {
+			return "", append(raw, hdr...), ErrTooLarge
+		}
+		body := make([]byte, length)
+		if _, err = io.ReadFull(r, body); err != nil {
+			return "", append(raw, hdr...), ErrIncomplete
+		}
+		raw = append(append(raw, hdr...), body...)
+		handshake = append(handshake, body...)
+
+		name, perr := parseClientHello(handshake)
+		if perr == ErrIncomplete {
+			continue // ждём следующую запись: сообщение продолжается в ней
+		}
+		return name, raw, perr
 	}
-	if hdr[0] != 0x16 || hdr[1] != 0x03 {
-		return "", hdr, ErrNotTLS
-	}
-	length := int(binary.BigEndian.Uint16(hdr[3:5]))
-	if length <= 0 || 5+length > maxBytes {
-		return "", hdr, ErrTooLarge
-	}
-	body := make([]byte, length)
-	if _, err = io.ReadFull(r, body); err != nil {
-		return "", hdr, ErrIncomplete
-	}
-	raw = append(hdr, body...)
-	name, err := parseClientHello(body)
-	return name, raw, err
+	return "", raw, ErrIncomplete
 }
 
 func parseClientHello(b []byte) (string, error) {
-	// handshake header: type(1) length(3)
-	if len(b) < 4 || b[0] != 0x01 {
+	// handshake header: type(1) length(3). Слишком мало байт — это «данных пока
+	// не хватает», а не «не TLS»: остаток приедет следующей записью.
+	if len(b) > 0 && b[0] != 0x01 {
 		return "", ErrNotTLS
+	}
+	if len(b) < 4 {
+		return "", ErrIncomplete
 	}
 	hl := int(b[1])<<16 | int(b[2])<<8 | int(b[3])
 	b = b[4:]

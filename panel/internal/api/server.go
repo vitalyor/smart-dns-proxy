@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"smartdns/panel/internal/auth"
@@ -58,6 +59,16 @@ type Server struct {
 	Cfg     Config
 	Fetcher *fetcher.Client
 	web     http.Handler
+
+	// Последняя досылка сертификата по нодам — чтобы опрос раз в десять секунд
+	// не превращался в поток отправок, пока нода подхватывает файл.
+	certPushMu sync.Mutex
+	certPushed map[string]certPush
+}
+
+type certPush struct {
+	fp string
+	at time.Time
 }
 
 var (

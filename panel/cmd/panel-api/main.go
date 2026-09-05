@@ -130,6 +130,8 @@ func main() {
 	// request per ingress node — so it runs on its own, slower ticker.
 	go srv.PollCounters(ctx, durationEnv("COUNTERS_INTERVAL", 60*time.Second))
 	// Renewal lives in one place on a schedule instead of on every node.
+	// Первая проверка сразу при старте: панель, которая лежала месяц, должна
+	// сказать о сроке сертификата в момент подъёма, а не через полсуток.
 	go srv.RenewCerts(ctx, durationEnv("CERT_RENEW_INTERVAL", 12*time.Hour))
 
 	go func() {
