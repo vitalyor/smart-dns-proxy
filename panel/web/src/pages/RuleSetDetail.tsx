@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, fmtTime, shortHash, timeTitle } from "../api";
-import { Card, Confirm, ErrorState, Field, Modal, Notice, Spinner, errText, useAsync, useToast } from "../ui";
-import { IconBack, IconCheck, IconClose, IconPlus, IconRefresh, IconTrash } from "../icons";
+import { Card, Confirm, ErrorState, Field, Modal, Notice, Spinner, errText, useAsync, useToast, Stat as UiStat } from "../ui";
+import { IconBack, IconCheck, IconClose, IconPlus, IconRefresh, IconTrash, IconList } from "../icons";
 
 type Source = {
   id: string; name: string; type: string; url: string; repo: string; ref: string;
@@ -229,10 +229,8 @@ export default function RuleSetDetail() {
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
-    <div className="card tile">
-      <div className="tile-label">{label}</div>
-      <div className={`tile-value ${tone ?? ""}`}>{value}</div>
-    </div>
+    <UiStat icon={<IconList />} tone={tone === "bad" ? "bad" : tone === "warn" ? "warn" : "direct"}
+      label={label} value={value} state={tone as "ok" | "warn" | "bad" | "accent" | undefined} />
   );
 }
 
