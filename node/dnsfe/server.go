@@ -90,7 +90,17 @@ type dnsHandler struct {
 
 func (h dnsHandler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	ip := addrOf(w.RemoteAddr())
-	resp := h.s.Handle(req, ip, h.proto, "")
+	// DoT carries the device token in the server name (<token>.dns.example),
+	// because Android's Private DNS field accepts nothing but a hostname.
+	token := ""
+	if h.proto == "dot" {
+		if cs, ok := w.(dns.ConnectionStater); ok {
+			if st := cs.ConnectionState(); st != nil {
+				token = h.s.Router.TokenFromSNI(st.ServerName)
+			}
+		}
+	}
+	resp := h.s.Handle(req, ip, h.proto, token)
 	if resp == nil {
 		_ = w.Close()
 		return
