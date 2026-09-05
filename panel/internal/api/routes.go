@@ -105,6 +105,15 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /sub/{short_id}/devices", s.wrap("sub.device.add", k(ScopeSubDevices, s.subAddDevice)))
 	api.HandleFunc("DELETE /sub/{short_id}/devices/{device_id}", s.wrap("sub.device.delete", k(ScopeSubDevices, s.subDeleteDevice)))
 	api.HandleFunc("GET /sub/{short_id}/devices/{device_id}/config", s.wrap("sub.device.config", k(ScopeSubRead, s.subDeviceConfig)))
+	api.HandleFunc("GET /sub/{short_id}/devices/{device_id}/instructions", s.wrap("sub.device.instructions", k(ScopeSubInstructions, s.subDeviceInstructions)))
+	api.HandleFunc("GET /sub/{short_id}/assets/{id}", s.wrap("sub.asset", k(ScopeSubInstructions, s.subAsset)))
+
+	// --- instructions (operator) ---
+	api.HandleFunc("GET /instructions", s.wrap("instructions.list", v("viewer", s.listInstructions)))
+	api.HandleFunc("PUT /instructions/{platform}", s.wrap("instructions.put", v("operator", s.putInstruction)))
+	api.HandleFunc("POST /instructions/preview", s.wrap("instructions.preview", v("operator", s.previewInstruction)))
+	api.HandleFunc("POST /instruction-assets", s.wrap("instructions.asset.upload", v("operator", s.uploadAsset)))
+	api.HandleFunc("GET /instruction-assets/{id}", s.wrap("instructions.asset", v("viewer", s.serveAsset)))
 
 	// --- devices & settings ---
 	api.HandleFunc("GET /device-profiles", s.wrap("devices.list", v("viewer", s.listDeviceProfiles)))
