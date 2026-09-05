@@ -19,7 +19,6 @@ var defaultSettings = map[string]any{
 	"doh_hostname":         "",
 	"dot_hostname":         "",
 	"doh_path":             "/dns-query",
-	"doh_path_tokens":      []string{},
 	"publish_aaaa":         "false",
 	"egress_resolver":      "1.1.1.1:53",
 	"timezone":             "Europe/Moscow",

@@ -24,7 +24,10 @@ type Router struct {
 	routes []route
 	cfg    *model.NodeConfig
 	acl    []netip.Prefix
-	tokens map[string]bool
+	// tokens is owned by the access channel, not by the config: applying a
+	// configuration must never clobber a newer token set (ADR 0012).
+	tokens    map[string]bool
+	tokenHash string
 }
 
 // NewRouter compiles a routing table from a node config.
@@ -47,13 +50,33 @@ func (r *Router) Apply(c *model.NodeConfig) {
 			acl = append(acl, p)
 		}
 	}
-	tokens := make(map[string]bool, len(c.DNS.Access.DoHPathTokens))
-	for _, t := range c.DNS.Access.DoHPathTokens {
-		tokens[strings.ToLower(t)] = true
-	}
 	r.mu.Lock()
-	r.routes, r.cfg, r.acl, r.tokens = routes, c, acl, tokens
+	r.routes, r.cfg, r.acl = routes, c, acl
 	r.mu.Unlock()
+}
+
+// SetTokens swaps the accepted DoH path token set. Separate from Apply on
+// purpose: access changes far more often than configuration, and a config
+// rollout must not undo a newer set.
+func (r *Router) SetTokens(tokens []string) {
+	m := make(map[string]bool, len(tokens))
+	for _, t := range tokens {
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			m[t] = true
+		}
+	}
+	h := model.AccessHash(tokens)
+	r.mu.Lock()
+	r.tokens, r.tokenHash = m, h
+	r.mu.Unlock()
+}
+
+// TokensHash reports the digest of the current set so the node can tell the
+// panel what it holds and the two can converge.
+func (r *Router) TokensHash() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.tokenHash
 }
 
 // Config returns the active node config.

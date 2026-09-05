@@ -97,11 +97,6 @@ func (s *Server) createDeviceProfile(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	if tokenHash != "" {
-		if err := s.appendSettingList(r.Context(), "doh_path_tokens", tokenHash); err != nil {
-			return err
-		}
-	}
 	s.audit(r.Context(), r, "device_profile.created", "device_profile", p.ID, nil,
 		map[string]any{"name": req.Name, "type": req.Type})
 	writeJSON(w, http.StatusCreated, map[string]any{"profile": p, "token": token})
@@ -110,17 +105,12 @@ func (s *Server) createDeviceProfile(w http.ResponseWriter, r *http.Request) err
 
 func (s *Server) deleteDeviceProfile(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	var hash string
-	_ = s.DB.QueryRow(r.Context(), `SELECT token_hash FROM device_profiles WHERE id=$1`, id).Scan(&hash)
 	n, err := s.DB.ExecN(r.Context(), `DELETE FROM device_profiles WHERE id=$1`, id)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return notFound("profile")
-	}
-	if hash != "" {
-		_ = s.removeSettingList(r.Context(), "doh_path_tokens", hash)
 	}
 	s.audit(r.Context(), r, "device_profile.deleted", "device_profile", id, nil, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

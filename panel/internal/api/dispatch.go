@@ -141,11 +141,12 @@ type pollRow struct {
 	Mgmt    string  `db:"mgmt_address"`
 	FP      string  `db:"fingerprint"`
 	Desired *string `db:"desired_revision_id"`
+	Role    string  `db:"role"`
 }
 
 func (s *Server) pollOnce(ctx context.Context) {
 	nodes, err := store.Many[pollRow](ctx, s.DB, `
-		SELECT n.id::text, n.name, n.mgmt_address, i.fingerprint, n.desired_revision_id::text
+		SELECT n.id::text, n.name, n.mgmt_address, i.fingerprint, n.desired_revision_id::text, n.role
 		FROM nodes n JOIN node_identities i ON i.node_id = n.id
 		WHERE n.mgmt_address <> '' AND i.revoked_at IS NULL AND n.status <> 'disabled'`)
 	if err != nil {
@@ -173,6 +174,12 @@ func (s *Server) pollOnce(ctx context.Context) {
 			WHERE id=$1`, n.ID, status, h.AppliedRevisionID, h.AppliedSequence, hj, h.LastErr, h.Version)
 		_, _ = s.DB.Exec(ctx, `INSERT INTO health_samples (node_id, kind, success, latency_ms)
 			VALUES ($1,'poll',$2,0)`, n.ID, status == "healthy")
+
+		// Access travels on its own channel, so a device added on the public page
+		// converges here instead of forcing a configuration rollout.
+		if n.Role == "ingress" {
+			s.reconcileAccess(ctx, t, h.AccessHash)
+		}
 
 		// Drift: the node is behind the revision it should run — re-push.
 		if n.Desired != nil && *n.Desired != "" && h.AppliedRevisionID != *n.Desired {

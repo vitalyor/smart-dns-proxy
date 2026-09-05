@@ -147,17 +147,13 @@ func (s *Server) patchSubscriber(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) deleteSubscriber(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
-	// Devices cascade; their tokens must leave the published set as well.
-	hashes, _ := s.deviceTokenHashes(r.Context(), id)
+	// Devices cascade; the access reconcile drops their tokens on the next poll.
 	n, err := s.DB.ExecN(r.Context(), `DELETE FROM subscribers WHERE id=$1`, id)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return notFound("subscriber")
-	}
-	for _, h := range hashes {
-		_ = s.removeSettingList(r.Context(), "doh_path_tokens", h)
 	}
 	s.audit(r.Context(), r, "subscriber.deleted", "subscriber", id, nil, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -191,7 +187,6 @@ func (s *Server) rotateSubscriber(w http.ResponseWriter, r *http.Request) error 
 			if old == "" {
 				continue // DoT-only profile: no token to rotate
 			}
-			oldHash := hashToken(old)
 			tok := auth.RandomToken(18)
 			d.Config["path_token"] = tok
 			b, _ := json.Marshal(d.Config)
@@ -200,8 +195,6 @@ func (s *Server) rotateSubscriber(w http.ResponseWriter, r *http.Request) error 
 				d.ID, b, hashToken(tok)); err != nil {
 				return err
 			}
-			_ = s.removeSettingList(ctx, "doh_path_tokens", oldHash)
-			_ = s.appendSettingList(ctx, "doh_path_tokens", hashToken(tok))
 			rotated++
 		}
 	}
@@ -210,24 +203,6 @@ func (s *Server) rotateSubscriber(w http.ResponseWriter, r *http.Request) error 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"subscriber": sub, "url": s.subscriptionURL(ctx, sub.ShortID), "devices_rotated": rotated})
 	return nil
-}
-
-// deviceTokenHashes reads the published hashes directly: DeviceProfile does not
-// carry token_hash, and it must not — the panel hands that column to nobody.
-func (s *Server) deviceTokenHashes(ctx contextT, subscriberID string) ([]string, error) {
-	type row struct {
-		Hash string `db:"token_hash"`
-	}
-	rows, err := store.Many[row](ctx, s.DB,
-		`SELECT token_hash FROM device_profiles WHERE subscriber_id=$1 AND token_hash <> ''`, subscriberID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(rows))
-	for _, x := range rows {
-		out = append(out, x.Hash)
-	}
-	return out, nil
 }
 
 func hashToken(t string) string {

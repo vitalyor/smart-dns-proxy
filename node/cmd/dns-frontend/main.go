@@ -40,6 +40,7 @@ func main() {
 		keyFile  = flag.String("key", env("TLS_KEY_FILE", ""), "TLS key for DoT/DoH")
 		metrAddr = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9101"), "Prometheus metrics listen address")
 		logAddr  = flag.String("log-addr", env("DNS_LOG_ADDR", ":9053"), "internal HTTP address serving the live query log (reached by the node-agent only)")
+		accessPath = flag.String("access", env("SMARTDNS_ACCESS", "/var/lib/smartdns-agent/access.json"), "path to the DoH token set written by the agent")
 		showVer  = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -64,6 +65,12 @@ func main() {
 		srv.Reload(c)
 	})
 	go loader.Watch(2 * time.Second)
+
+	// Access travels on its own channel: the agent writes this file, we pick it
+	// up here, and a configuration rollout never touches it.
+	accessCtx, stopAccess := context.WithCancel(context.Background())
+	defer stopAccess()
+	dnsfe.WatchAccess(accessCtx, *accessPath, 2*time.Second, router.SetTokens)
 
 	slog.Info("dns-frontend starting",
 		"version", version, "revision", cfg.RevisionID, "services", len(cfg.Services),

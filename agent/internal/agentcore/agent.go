@@ -180,6 +180,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux.HandleFunc("POST /v1/config", a.wrap(a.handleConfig))
 	mux.HandleFunc("GET /v1/health", a.wrap(a.handleHealth))
 	mux.HandleFunc("POST /v1/cert/issue", a.wrap(a.handleCert))
+	mux.HandleFunc("POST /v1/access/tokens", a.wrap(a.handleAccess))
 	mux.HandleFunc("GET /v1/dns/log", a.wrap(a.handleDNSLog))
 
 	srv := &http.Server{
@@ -317,6 +318,8 @@ func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) error {
 		LastErr:           a.lastErr,
 	}
 	a.mu.Unlock()
+	// Lets the panel spot token drift during its ordinary poll and re-push.
+	h.AccessHash = a.accessHash()
 	a.probe(&h)
 	writeJSON(w, http.StatusOK, h)
 	return nil
