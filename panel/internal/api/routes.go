@@ -87,6 +87,24 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /revisions/{id}/deploy", s.wrap("revisions.deploy", v("operator", s.deployRevision)))
 	api.HandleFunc("POST /revisions/{id}/rollback", s.wrap("revisions.rollback", v("operator", s.rollbackRevision)))
 
+	// --- subscribers (operator) ---
+	api.HandleFunc("GET /subscribers", s.wrap("subscribers.list", v("viewer", s.listSubscribers)))
+	api.HandleFunc("POST /subscribers", s.wrap("subscribers.create", v("operator", s.createSubscriber)))
+	api.HandleFunc("PATCH /subscribers/{id}", s.wrap("subscribers.patch", v("operator", s.patchSubscriber)))
+	api.HandleFunc("DELETE /subscribers/{id}", s.wrap("subscribers.delete", v("operator", s.deleteSubscriber)))
+	api.HandleFunc("POST /subscribers/{id}/rotate", s.wrap("subscribers.rotate", v("operator", s.rotateSubscriber)))
+
+	// --- machine keys (owner) ---
+	api.HandleFunc("GET /api-keys", s.wrap("apikeys.list", v("owner", s.listAPIKeys)))
+	api.HandleFunc("POST /api-keys", s.wrap("apikeys.create", v("owner", s.createAPIKey)))
+	api.HandleFunc("DELETE /api-keys/{id}", s.wrap("apikeys.revoke", v("owner", s.revokeAPIKey)))
+
+	// --- subscription service (scoped key, no session) ---
+	k := s.requireScope
+	api.HandleFunc("GET /sub/{short_id}", s.wrap("sub.status", k(ScopeSubRead, s.subStatus)))
+	api.HandleFunc("POST /sub/{short_id}/devices", s.wrap("sub.device.add", k(ScopeSubDevices, s.subAddDevice)))
+	api.HandleFunc("DELETE /sub/{short_id}/devices/{device_id}", s.wrap("sub.device.delete", k(ScopeSubDevices, s.subDeleteDevice)))
+
 	// --- devices & settings ---
 	api.HandleFunc("GET /device-profiles", s.wrap("devices.list", v("viewer", s.listDeviceProfiles)))
 	api.HandleFunc("POST /device-profiles", s.wrap("devices.create", v("operator", s.createDeviceProfile)))

@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -52,6 +50,28 @@ func (s *Server) dnsEndpoints(ctx contextT) map[string]any {
 	}
 }
 
+// deviceTypes are the platforms a profile can target.
+var deviceTypes = []string{"android_dot", "apple_doh", "apple_dot", "windows_doh", "router", "plain"}
+
+// buildDeviceConfig assembles the stored config for a new device and mints its
+// DoH path token where the platform can carry one. DoH profiles get a unique
+// path token so the resolver is not open to the whole Internet; Android Private
+// DNS (DoT) cannot carry such a token — that limitation is surfaced to the
+// operator, not hidden. Shared by the operator page and the subscription API.
+func (s *Server) buildDeviceConfig(ctx contextT, typ string) (map[string]any, string, string) {
+	cfg := map[string]any{"endpoints": s.dnsEndpoints(ctx)}
+	var token, tokenHash string
+	switch typ {
+	case "apple_doh", "windows_doh", "router":
+		token = auth.RandomToken(18)
+		tokenHash = hashToken(token)
+		cfg["path_token"] = token
+	case "android_dot":
+		cfg["warning"] = "Android Private DNS не передаёт токен. Для этого профиля резолвер работает в режиме restricted-public-dot: строгие лимиты запросов вместо персональной аутентификации."
+	}
+	return cfg, token, tokenHash
+}
+
 type deviceProfileRequest struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
@@ -62,29 +82,13 @@ func (s *Server) createDeviceProfile(w http.ResponseWriter, r *http.Request) err
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	if !contains([]string{"android_dot", "apple_doh", "apple_dot", "windows_doh", "router", "plain"}, req.Type) {
+	if !contains(deviceTypes, req.Type) {
 		return badRequest("недопустимый тип профиля")
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return badRequest("укажите название профиля")
 	}
-	endpoints := s.dnsEndpoints(r.Context())
-	cfg := map[string]any{"endpoints": endpoints}
-
-	// DoH profiles get a unique path token so the resolver is not open to the
-	// whole Internet. Android Private DNS (DoT) cannot carry such a token —
-	// that limitation is surfaced to the operator, not hidden.
-	var token string
-	tokenHash := ""
-	if req.Type == "apple_doh" || req.Type == "windows_doh" || req.Type == "router" {
-		token = auth.RandomToken(18)
-		sum := sha256.Sum256([]byte(token))
-		tokenHash = hex.EncodeToString(sum[:])
-		cfg["path_token"] = token
-	}
-	if req.Type == "android_dot" {
-		cfg["warning"] = "Android Private DNS не передаёт токен. Для этого профиля резолвер работает в режиме restricted-public-dot: строгие лимиты запросов вместо персональной аутентификации."
-	}
+	cfg, token, tokenHash := s.buildDeviceConfig(r.Context(), req.Type)
 	b, _ := json.Marshal(cfg)
 	p, err := store.One[store.DeviceProfile](r.Context(), s.DB, `
 		INSERT INTO device_profiles (name, type, config, token_hash) VALUES ($1,$2,$3,$4)

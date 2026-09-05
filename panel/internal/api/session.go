@@ -17,6 +17,7 @@ type ctxKey string
 
 const (
 	ctxUser    ctxKey = "user"
+	ctxAPIKey  ctxKey = "api_key"
 	ctxSession ctxKey = "session"
 )
 
@@ -40,6 +41,11 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
 		if err != nil || c.Value == "" {
+			// No cookie: this may be a machine caller with a scoped key.
+			if p := s.resolveAPIKey(r); p != nil {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxAPIKey, p)))
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
