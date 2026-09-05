@@ -58,8 +58,8 @@ func (s *Server) listInstructions(w http.ResponseWriter, r *http.Request) error 
 			"label": platformLabel(p)})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":       out,
-		"version":     s.instructionsVersion(ctx),
+		"items":        out,
+		"version":      s.instructionsVersion(ctx),
 		"placeholders": []string{phDoHURL, phDoTHost, phDeviceName, phIngressV4},
 	})
 	return nil

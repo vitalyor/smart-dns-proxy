@@ -23,8 +23,8 @@ func TestTokenFromSNI(t *testing.T) {
 		"abc123.dns.example.net.": want("abc123"), // с корневой точкой
 		"dns.example.net":         "",             // голое имя резолвера — токена нет
 		"":                         "",
-		"evil.example.com":         "",             // чужой домен
-		"a.b.dns.example.net":     "",             // только один уровень считается токеном
+		"evil.example.com":         "", // чужой домен
+		"a.b.dns.example.net":     "", // только один уровень считается токеном
 	}
 	for sni, exp := range cases {
 		if got := r.TokenFromSNI(sni); got != exp {

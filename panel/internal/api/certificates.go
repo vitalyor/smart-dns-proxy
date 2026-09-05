@@ -24,8 +24,8 @@ import (
 const resolverCertName = "resolver"
 
 const (
-	secretCFToken   = "cloudflare_api_token"
-	secretACMEKey   = "acme_account_key"
+	secretCFToken = "cloudflare_api_token"
+	secretACMEKey = "acme_account_key"
 )
 
 func (s *Server) getSecret(ctx contextT, key string) (string, error) {
