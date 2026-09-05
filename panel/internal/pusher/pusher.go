@@ -189,6 +189,21 @@ func (c *Client) IssueCert(ctx context.Context, t Target, req CertRequest) (*Cer
 	return &out, nil
 }
 
+// PushAccess sends the complete DoH token set. The full set travels every time
+// rather than a delta, so the call is idempotent and a missed push is repaired by
+// the next reconcile instead of leaving the node subtly wrong (ADR 0012).
+func (c *Client) PushAccess(ctx context.Context, t Target, set model.AccessSet) error {
+	body, _ := json.Marshal(set)
+	raw, code, err := c.doTimeout(ctx, t, http.MethodPost, "/v1/access/tokens", body, 15*time.Second)
+	if err != nil {
+		return err
+	}
+	if code != http.StatusOK {
+		return fmt.Errorf("node rejected access set (HTTP %d): %s", code, string(raw))
+	}
+	return nil
+}
+
 // FetchDNSLog returns the node's live query-log JSON (raw), passing the
 // incremental cursor through. Short timeout: it is polled continuously.
 func (c *Client) FetchDNSLog(ctx context.Context, t Target, after uint64) ([]byte, error) {

@@ -268,7 +268,6 @@ func (s *Server) dnsConfig(ctx context.Context) model.DNSConfig {
 		Access: model.DNSAccess{
 			Mode:           getSetting(ctx, s.DB, "dns_access_mode", "allowlist"),
 			AllowedCIDRs:   getSettingList(ctx, s.DB, "dns_allowed_cidrs"),
-			DoHPathTokens:  getSettingList(ctx, s.DB, "doh_path_tokens"),
 			RateLimitQPS:   getSettingInt(ctx, s.DB, "dns_rate_limit_qps", 50),
 			RateLimitBurst: getSettingInt(ctx, s.DB, "dns_rate_limit_burst", 250),
 			MaxConcurrent:  getSettingInt(ctx, s.DB, "dns_max_concurrent", 2048),
