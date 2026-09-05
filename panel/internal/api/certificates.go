@@ -30,7 +30,7 @@ const (
 
 func (s *Server) getSecret(ctx contextT, key string) (string, error) {
 	var b []byte
-	if err := s.DB.QueryRow(ctx, `SELECT value FROM secrets WHERE key=$1`, key).Scan(&b); err != nil {
+	if err := s.DB.QueryRow(ctx, `SELECT value FROM panel_secrets WHERE key=$1`, key).Scan(&b); err != nil {
 		return "", err
 	}
 	return s.decryptSecret(b)
@@ -42,7 +42,7 @@ func (s *Server) putSecret(ctx contextT, key, plain string) error {
 		return err
 	}
 	_, err = s.DB.Exec(ctx, `
-		INSERT INTO secrets (key, value) VALUES ($1,$2)
+		INSERT INTO panel_secrets (key, value) VALUES ($1,$2)
 		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`, key, enc)
 	return err
 }
