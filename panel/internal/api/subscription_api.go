@@ -169,13 +169,8 @@ func (s *Server) subAddDevice(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	// Publishing the token is a separate step on purpose: it will move to the
-	// access channel in phase 2, where it no longer rides a config revision.
-	if tokenHash != "" {
-		if err := s.appendSettingList(ctx, "doh_path_tokens", tokenHash); err != nil {
-			return err
-		}
-	}
+	// Nothing to publish here: the access reconcile recomputes the live set from
+	// device_profiles on the next poll, so there is one source of truth.
 	p, err := store.One[store.DeviceProfile](ctx, s.DB, `SELECT * FROM device_profiles WHERE id=$1`, devID)
 	if err != nil {
 		return err
@@ -198,9 +193,6 @@ func (s *Server) subDeleteDevice(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return notFound("subscriber")
 	}
-	var hash string
-	_ = s.DB.QueryRow(ctx, `SELECT token_hash FROM device_profiles WHERE id=$1 AND subscriber_id=$2`,
-		r.PathValue("device_id"), sub.ID).Scan(&hash)
 	n, err := s.DB.ExecN(ctx, `DELETE FROM device_profiles WHERE id=$1 AND subscriber_id=$2`,
 		r.PathValue("device_id"), sub.ID)
 	if err != nil {
@@ -208,9 +200,6 @@ func (s *Server) subDeleteDevice(w http.ResponseWriter, r *http.Request) error {
 	}
 	if n == 0 {
 		return notFound("device")
-	}
-	if hash != "" {
-		_ = s.removeSettingList(ctx, "doh_path_tokens", hash)
 	}
 	s.audit(ctx, r, "subscriber.device.deleted", "device_profile", r.PathValue("device_id"), nil,
 		map[string]any{"subscriber": sub.ID})
