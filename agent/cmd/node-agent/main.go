@@ -26,17 +26,17 @@ var version = "2.0.3"
 func main() {
 	agentcore.Version = version
 	var (
-		bundle     = flag.String("bundle", env("NODE_BUNDLE", ""), "provisioning bundle from the panel (base64); needed only until the identity is on disk")
-		bundleFile = flag.String("bundle-file", env("NODE_BUNDLE_FILE", ""), "path to read the bundle from, waited for if missing (lab/orchestration use)")
-		role       = flag.String("role", env("NODE_ROLE", ""), "ingress or egress (must match the bundle)")
-		stateDir   = flag.String("state", env("AGENT_STATE_DIR", "/var/lib/smartdns-agent"), "state directory")
-		listen     = flag.String("listen", env("MGMT_ADDR", ":3333"), "management listen address the panel connects to")
-		tlsDir     = flag.String("tls-dir", env("TLS_DIR", ""), "directory for panel-issued DoT/DoH certificates (ingress only)")
-		acmeHTTP   = flag.String("acme-http", env("ACME_HTTP_ADDR", ":80"), "address the HTTP-01 challenge binds during issuance, then closes")
+		bundle      = flag.String("bundle", env("NODE_BUNDLE", ""), "provisioning bundle from the panel (base64); needed only until the identity is on disk")
+		bundleFile  = flag.String("bundle-file", env("NODE_BUNDLE_FILE", ""), "path to read the bundle from, waited for if missing (lab/orchestration use)")
+		role        = flag.String("role", env("NODE_ROLE", ""), "ingress or egress (must match the bundle)")
+		stateDir    = flag.String("state", env("AGENT_STATE_DIR", "/var/lib/smartdns-agent"), "state directory")
+		listen      = flag.String("listen", env("MGMT_ADDR", ":3333"), "management listen address the panel connects to")
+		tlsDir      = flag.String("tls-dir", env("TLS_DIR", ""), "directory for panel-issued DoT/DoH certificates (ingress only)")
+		acmeHTTP    = flag.String("acme-http", env("ACME_HTTP_ADDR", ":80"), "address the HTTP-01 challenge binds during issuance, then closes")
 		dnsCountURL = flag.String("dns-counters-url", env("DNS_COUNTERS_URL", ""), "internal URL of the dns-frontend per-device counters (empty disables)")
-		dnsLogURL  = flag.String("dns-log-url", env("DNS_LOG_URL", ""), "internal URL of the dns-frontend live query log (ingress only, e.g. http://dns-frontend:9053/log)")
-		metrAddr   = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9104"), "Prometheus metrics address")
-		showVer    = flag.Bool("version", false, "print version and exit")
+		dnsLogURL   = flag.String("dns-log-url", env("DNS_LOG_URL", ""), "internal URL of the dns-frontend live query log (ingress only, e.g. http://dns-frontend:9053/log)")
+		metrAddr    = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9104"), "Prometheus metrics address")
+		showVer     = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
 	if *showVer {
