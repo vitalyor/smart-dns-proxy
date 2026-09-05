@@ -11,13 +11,14 @@ import RuleSets from "./pages/RuleSets";
 import RuleSetDetail from "./pages/RuleSetDetail";
 import Revisions from "./pages/Revisions";
 import Devices from "./pages/Devices";
+import Subscribers from "./pages/Subscribers";
 import Health from "./pages/Health";
 import Logs from "./pages/Logs";
 import Audit from "./pages/Audit";
 import Settings from "./pages/Settings";
 import Setup from "./pages/Setup";
 import {
-  IconGauge, IconServer, IconArrowIn, IconGrid, IconList,
+  IconGauge, IconServer, IconArrowIn, IconGrid, IconList, IconGlobe,
   IconLayers, IconPhone, IconPulse, IconShield, IconSliders, IconLogout,
   IconMoon, IconSun, IconPlay,
 } from "./icons";
@@ -41,6 +42,7 @@ const NAV = [
   // прямой ссылке для редкого случая «один список на несколько сервисов».
   { to: "/revisions", label: "Конфигурации", Icon: IconLayers },
   { to: "/devices", label: "Устройства", Icon: IconPhone },
+  { to: "/subscribers", label: "Подписчики", Icon: IconGlobe },
   { group: "Наблюдение" },
   { to: "/logs", label: "Логи запросов", Icon: IconList },
   { to: "/health", label: "Здоровье и события", Icon: IconPulse },
@@ -150,6 +152,7 @@ export default function App() {
             <Route path="/rule-sets/:id" element={<RuleSetDetail />} />
             <Route path="/revisions" element={<Revisions />} />
             <Route path="/devices" element={<Devices />} />
+            <Route path="/subscribers" element={<Subscribers me={me} />} />
             <Route path="/logs" element={<Logs />} />
             <Route path="/health" element={<Health />} />
             <Route path="/audit" element={<Audit />} />
