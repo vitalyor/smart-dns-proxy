@@ -184,6 +184,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux.HandleFunc("GET /v1/health", a.wrap(a.handleHealth))
 	mux.HandleFunc("POST /v1/cert/issue", a.wrap(a.handleCert))
 	mux.HandleFunc("POST /v1/access/tokens", a.wrap(a.handleAccess))
+	mux.HandleFunc("POST /v1/cert/install", a.wrap(a.handleInstallCert))
 	mux.HandleFunc("GET /v1/dns/log", a.wrap(a.handleDNSLog))
 	mux.HandleFunc("GET /v1/dns/counters", a.wrap(a.handleDNSCounters))
 

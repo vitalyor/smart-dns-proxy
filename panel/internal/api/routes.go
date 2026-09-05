@@ -123,6 +123,11 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("GET /settings", s.wrap("settings.get", v("viewer", s.getSettings)))
 	api.HandleFunc("PUT /settings", s.wrap("settings.put", v("owner", s.putSettings)))
 
+	// --- certificates (owner) ---
+	api.HandleFunc("GET /certificates", s.wrap("certificates.status", v("viewer", s.certificatesStatus)))
+	api.HandleFunc("PUT /certificates/cloudflare-token", s.wrap("certificates.token", v("owner", s.putCloudflareToken)))
+	api.HandleFunc("POST /certificates/issue", s.wrap("certificates.issue", v("owner", s.issueResolverCert)))
+
 	// --- backup / restore (moves the whole panel to a new host) ---
 	api.HandleFunc("POST /backup", s.wrap("backup.create", v("owner", s.handleBackup)))
 	api.HandleFunc("POST /restore", s.wrap("backup.restore", v("owner", s.handleRestore)))

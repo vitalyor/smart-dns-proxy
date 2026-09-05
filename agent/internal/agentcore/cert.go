@@ -90,6 +90,58 @@ func (a *Agent) handleCert(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// handleInstallCert accepts a certificate the panel obtained itself. Wildcards
+// need DNS-01, and DNS-01 needs a token that can rewrite the whole zone — that
+// token stays in the panel and never touches a node, so the node only ever
+// receives the finished certificate (ADR 0012).
+func (a *Agent) handleInstallCert(w http.ResponseWriter, r *http.Request) error {
+	raw, err := readAll(r, 1<<20)
+	if err != nil {
+		return err
+	}
+	var req struct {
+		CertPEM string `json:"cert_pem"`
+		KeyPEM  string `json:"key_pem"`
+	}
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return fmt.Errorf("certificate payload is not valid JSON: %w", err)
+	}
+	if strings.TrimSpace(req.CertPEM) == "" || strings.TrimSpace(req.KeyPEM) == "" {
+		return errors.New("both cert_pem and key_pem are required")
+	}
+	leaf, err := parseLeaf([]byte(req.CertPEM))
+	if err != nil {
+		return fmt.Errorf("certificate is not usable: %w", err)
+	}
+	if a.cfg.TLSDir == "" {
+		return errors.New("no TLS directory configured on this node (set TLS_DIR)")
+	}
+	a.certMu.Lock()
+	defer a.certMu.Unlock()
+	// Key first, then the chain: dns-frontend must never reload a chain whose
+	// key has not landed yet.
+	if err := writeFileAtomic(filepath.Join(a.cfg.TLSDir, "privkey.pem"), []byte(req.KeyPEM), 0o600); err != nil {
+		return err
+	}
+	if err := writeFileAtomic(filepath.Join(a.cfg.TLSDir, "fullchain.pem"), []byte(req.CertPEM), 0o644); err != nil {
+		return err
+	}
+	slog.Info("certificate installed", "domains", leaf.DNSNames, "not_after", leaf.NotAfter)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok", "domains": leaf.DNSNames,
+		"not_after": leaf.NotAfter.UTC().Format(time.RFC3339),
+	})
+	return nil
+}
+
+func parseLeaf(chain []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(chain)
+	if block == nil {
+		return nil, errors.New("no PEM block found")
+	}
+	return x509.ParseCertificate(block.Bytes)
+}
+
 // issueCert runs an ACME HTTP-01 order and writes fullchain.pem/privkey.pem into
 // the TLS dir the dns-frontend hot-reloads. Let's Encrypt occasionally leaves an
 // order in a state where finalize returns a transient 404 ("certificate not

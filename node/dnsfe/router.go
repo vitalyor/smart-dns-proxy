@@ -4,6 +4,8 @@
 package dnsfe
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/netip"
 	"strings"
 	"sync"
@@ -77,6 +79,33 @@ func (r *Router) TokensHash() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.tokenHash
+}
+
+// TokenFromSNI recovers a device token from a DoT server name. Android's Private
+// DNS accepts only a hostname and cannot carry a token in a path, so the token
+// rides in the label: <token>.dns.example. Returns the same sha256 form the DoH
+// path produces, or "" when the name is the bare resolver hostname.
+//
+// This is what lets Android participate in per-device access at all; without it
+// turning on token enforcement would simply cut every Android user off.
+func (r *Router) TokenFromSNI(sni string) string {
+	r.mu.RLock()
+	cfg := r.cfg
+	r.mu.RUnlock()
+	if cfg == nil || sni == "" {
+		return ""
+	}
+	base := strings.ToLower(strings.TrimSuffix(cfg.DNS.DoTHostname, "."))
+	sni = strings.ToLower(strings.TrimSuffix(sni, "."))
+	if base == "" || sni == base || !strings.HasSuffix(sni, "."+base) {
+		return ""
+	}
+	label := strings.TrimSuffix(sni, "."+base)
+	if label == "" || strings.Contains(label, ".") {
+		return "" // only one level below the resolver name is a token
+	}
+	sum := sha256.Sum256([]byte(label))
+	return hex.EncodeToString(sum[:])
 }
 
 // Config returns the active node config.

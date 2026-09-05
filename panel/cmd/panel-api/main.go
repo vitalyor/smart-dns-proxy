@@ -129,6 +129,8 @@ func main() {
 	// Usage needs coarser resolution than health, and each tick costs one
 	// request per ingress node — so it runs on its own, slower ticker.
 	go srv.PollCounters(ctx, durationEnv("COUNTERS_INTERVAL", 60*time.Second))
+	// Renewal lives in one place on a schedule instead of on every node.
+	go srv.RenewCerts(ctx, durationEnv("CERT_RENEW_INTERVAL", 12*time.Hour))
 
 	go func() {
 		slog.Info("panel UI/API listening", "addr", *addr, "public_url", publicURL, "version", version, "lab_mode", cfg.LabMode)
