@@ -104,6 +104,7 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("GET /sub/{short_id}", s.wrap("sub.status", k(ScopeSubRead, s.subStatus)))
 	api.HandleFunc("POST /sub/{short_id}/devices", s.wrap("sub.device.add", k(ScopeSubDevices, s.subAddDevice)))
 	api.HandleFunc("DELETE /sub/{short_id}/devices/{device_id}", s.wrap("sub.device.delete", k(ScopeSubDevices, s.subDeleteDevice)))
+	api.HandleFunc("GET /sub/{short_id}/devices/{device_id}/config", s.wrap("sub.device.config", k(ScopeSubRead, s.subDeviceConfig)))
 
 	// --- devices & settings ---
 	api.HandleFunc("GET /device-profiles", s.wrap("devices.list", v("viewer", s.listDeviceProfiles)))
