@@ -95,41 +95,71 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
+	// Сначала проверяем всё, и только потом пишем: раньше цикл успевал записать
+	// часть полей и упасть на следующем, оставляя настройки полусохранёнными.
 	for k, v := range req {
 		if !settableKeys[k] {
 			return badRequest("параметр %q нельзя изменить через API", k)
 		}
-		if k == "dns_access_mode" {
-			var mode string
-			_ = json.Unmarshal(v, &mode)
-			if !contains([]string{"allowlist", "doh-token", "mtls", "restricted-public-dot"}, mode) {
-				return badRequest("недопустимый режим доступа к DNS")
-			}
+		if err := validateSetting(k, v); err != nil {
+			return err
 		}
-		if k == "log_level" || k == "node_log_level" {
-			var lvl string
-			_ = json.Unmarshal(v, &lvl)
-			if _, err := logging.Parse(lvl); err != nil {
-				return badRequest("недопустимый уровень логирования %q: допустимы debug, info, warn, error", lvl)
-			}
-		}
-		if _, err := s.DB.Exec(r.Context(),
+	}
+	ctx := r.Context()
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	for k, v := range req {
+		if _, err := tx.Exec(ctx,
 			`INSERT INTO settings (key, value) VALUES ($1,$2)
 			 ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`, k, []byte(v)); err != nil {
 			return err
 		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 	// The panel's own level takes effect immediately; node levels travel with
 	// the next revision, so the change stays auditable and reversible.
 	if v, ok := req["log_level"]; ok && s.Cfg.Level != nil {
 		var lvl string
 		_ = json.Unmarshal(v, &lvl)
-		if err := s.Cfg.Level.Set(lvl); err != nil {
-			return badRequest("%v", err)
+		_ = s.Cfg.Level.Set(lvl)
+	}
+	s.audit(ctx, r, "settings.updated", "settings", "", nil, req)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	return nil
+}
+
+// validateSetting rejects a value before anything is written.
+func validateSetting(k string, v json.RawMessage) error {
+	switch k {
+	case "dns_access_mode":
+		var mode string
+		_ = json.Unmarshal(v, &mode)
+		if !contains([]string{"allowlist", "doh-token", "mtls", "restricted-public-dot"}, mode) {
+			return badRequest("недопустимый режим доступа к DNS")
+		}
+	case "log_level", "node_log_level":
+		var lvl string
+		_ = json.Unmarshal(v, &lvl)
+		if _, err := logging.Parse(lvl); err != nil {
+			return badRequest("недопустимый уровень логирования %q: допустимы debug, info, warn, error", lvl)
+		}
+	case "device_limit_default":
+		var n int
+		if err := json.Unmarshal(v, &n); err != nil || n < 1 {
+			return badRequest("лимит устройств по умолчанию — целое число не меньше 1")
+		}
+	case "subscription_page_url":
+		var u string
+		_ = json.Unmarshal(v, &u)
+		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return badRequest("адрес страницы подписки должен начинаться с http:// или https://")
 		}
 	}
-	s.audit(r.Context(), r, "settings.updated", "settings", "", nil, req)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 	return nil
 }
 

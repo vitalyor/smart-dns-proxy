@@ -65,14 +65,36 @@ func (s *Server) listSubscribers(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// optional tells "поле не прислали" apart from "прислали null". PATCH обязан
+// их различать: без этого запрос «поменяй имя» снимал оба лимита и стирал
+// заметку, потому что незаполненные поля структуры выглядели как «сбросить».
+type optional[T any] struct {
+	Set   bool
+	Value *T
+}
+
+func (o *optional[T]) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	o.Value = &v
+	return nil
+}
+
 type subscriberRequest struct {
-	Name        string  `json:"name"`
-	Note        string  `json:"note"`
-	Enabled     *bool   `json:"enabled"`
-	ExpiresAt   *string `json:"expires_at"`   // RFC3339, "" — снять срок
-	DeviceLimit *int    `json:"device_limit"` // null — общий
-	QueryLimit  *int64  `json:"query_limit"`  // null — безлимит
-	QueryPeriod string  `json:"query_period"`
+	Name        *string         `json:"name"`
+	Note        *string         `json:"note"`
+	Enabled     *bool           `json:"enabled"`
+	ExpiresAt   *string         `json:"expires_at"`   // nil — не трогать, "" — снять срок
+	DeviceLimit optional[int]   `json:"device_limit"` // null — общий лимит
+	QueryLimit  optional[int64] `json:"query_limit"`  // null — безлимит
+	QueryPeriod string          `json:"query_period"`
 }
 
 func (s *Server) createSubscriber(w http.ResponseWriter, r *http.Request) error {
@@ -80,8 +102,8 @@ func (s *Server) createSubscriber(w http.ResponseWriter, r *http.Request) error 
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		return badRequest("укажите имя подписчика")
+	if req.Name == nil || strings.TrimSpace(*req.Name) == "" {
+		return badRequest("укажите имя пользователя")
 	}
 	period := req.QueryPeriod
 	if period == "" {
@@ -97,7 +119,8 @@ func (s *Server) createSubscriber(w http.ResponseWriter, r *http.Request) error 
 	sub, err := store.One[store.Subscriber](r.Context(), s.DB, `
 		INSERT INTO subscribers (name, note, short_id, expires_at, device_limit, query_limit, query_period)
 		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-		strings.TrimSpace(req.Name), req.Note, newShortID(), exp, req.DeviceLimit, req.QueryLimit, period)
+		strings.TrimSpace(*req.Name), strOr(req.Note, ""), newShortID(), exp,
+		req.DeviceLimit.Value, req.QueryLimit.Value, period)
 	if err != nil {
 		return err
 	}
@@ -132,10 +155,10 @@ func (s *Server) patchSubscriber(w http.ResponseWriter, r *http.Request) error {
 			version       = version + 1,
 			updated_at    = now()
 		WHERE id = $1 RETURNING *`,
-		id, strings.TrimSpace(req.Name), req.Note, req.Enabled,
+		id, strings.TrimSpace(strOr(req.Name, "")), req.Note, req.Enabled,
 		req.ExpiresAt != nil, exp,
-		true, req.DeviceLimit,
-		true, req.QueryLimit,
+		req.DeviceLimit.Set, req.DeviceLimit.Value,
+		req.QueryLimit.Set, req.QueryLimit.Value,
 		req.QueryPeriod)
 	if err != nil {
 		return err
@@ -203,6 +226,13 @@ func (s *Server) rotateSubscriber(w http.ResponseWriter, r *http.Request) error 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"subscriber": sub, "url": s.subscriptionURL(ctx, sub.ShortID), "devices_rotated": rotated})
 	return nil
+}
+
+func strOr(p *string, def string) string {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 func hashToken(t string) string {

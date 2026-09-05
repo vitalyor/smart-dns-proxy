@@ -3,6 +3,7 @@ package dnsfe
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,8 +29,10 @@ type DeviceCount struct {
 
 func newCounters() *counters { return &counters{m: map[string]*DeviceCount{}} }
 
-// hit records one query for a token. An empty token (plain DNS, DoT, or DoH
-// without a personal path) is not attributed to anybody.
+// hit records one *served* query for a token. An empty token (plain DNS, DoT, or
+// DoH without a personal path) is not attributed to anybody, and neither are
+// refused queries: counting those let a stranger who guessed a token burn its
+// owner's quota.
 func (c *counters) hit(token string, ts time.Time) {
 	if token == "" {
 		return
@@ -43,6 +46,22 @@ func (c *counters) hit(token string, ts time.Time) {
 	}
 	d.Queries++
 	d.LastSeen = ts.UnixMilli()
+}
+
+// retain drops tallies for tokens that are no longer valid. Without it the map
+// grows with every token the panel revokes and never shrinks until a restart.
+func (c *counters) retain(tokens []string) {
+	keep := make(map[string]bool, len(tokens))
+	for _, t := range tokens {
+		keep[strings.ToLower(strings.TrimSpace(t))] = true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k := range c.m {
+		if !keep[k] {
+			delete(c.m, k)
+		}
+	}
 }
 
 func (c *counters) snapshot() map[string]DeviceCount {
