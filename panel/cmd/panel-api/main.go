@@ -126,6 +126,9 @@ func main() {
 	// The panel connects out to nodes on a timer: polls health and re-pushes
 	// to any node that has drifted. Nodes never dial in.
 	go srv.PollNodes(ctx, durationEnv("POLL_INTERVAL", 10*time.Second))
+	// Usage needs coarser resolution than health, and each tick costs one
+	// request per ingress node — so it runs on its own, slower ticker.
+	go srv.PollCounters(ctx, durationEnv("COUNTERS_INTERVAL", 60*time.Second))
 
 	go func() {
 		slog.Info("panel UI/API listening", "addr", *addr, "public_url", publicURL, "version", version, "lab_mode", cfg.LabMode)

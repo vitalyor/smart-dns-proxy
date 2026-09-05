@@ -221,6 +221,18 @@ func (c *Client) FetchDNSLog(ctx context.Context, t Target, after uint64) ([]byt
 	return raw, nil
 }
 
+// FetchCounters returns the node's per-device tallies (raw JSON).
+func (c *Client) FetchCounters(ctx context.Context, t Target) ([]byte, error) {
+	raw, code, err := c.doTimeout(ctx, t, http.MethodGet, "/v1/dns/counters", nil, 8*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("node returned HTTP %d", code)
+	}
+	return raw, nil
+}
+
 // Poll fetches a node's health.
 func (c *Client) Poll(ctx context.Context, t Target) (*model.Health, error) {
 	raw, code, err := c.do(ctx, t, http.MethodGet, "/v1/health", nil)

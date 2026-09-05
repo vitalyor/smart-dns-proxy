@@ -40,3 +40,29 @@ func (a *Agent) handleDNSLog(w http.ResponseWriter, r *http.Request) error {
 	_, _ = w.Write(body)
 	return nil
 }
+
+// handleDNSCounters proxies the per-device tallies. Same shape as the log proxy:
+// an egress node has no dns-frontend and reports unavailability rather than
+// erroring, so the panel simply skips it.
+func (a *Agent) handleDNSCounters(w http.ResponseWriter, r *http.Request) error {
+	if a.cfg.DNSCountersURL == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false, "devices": map[string]any{}})
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.DNSCountersURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := dnsLogClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(body)
+	return nil
+}
