@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -83,6 +84,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /{short}/api/devices", s.addDevice)
 	mux.HandleFunc("DELETE /{short}/api/devices/{id}", s.deleteDevice)
 	mux.HandleFunc("GET /{short}/api/devices/{id}/config", s.deviceConfig)
+	mux.HandleFunc("GET /{short}/api/devices/{id}/instructions", s.deviceInstructions)
+	mux.HandleFunc("GET /{short}/api/assets/{id}", s.asset)
 	mux.HandleFunc("GET /{short}", s.page)
 	mux.HandleFunc("GET /", s.root)
 	return s.middleware(mux)
@@ -103,7 +106,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Content-Security-Policy",
-			"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src data:; form-action 'none'; base-uri 'none'")
+			"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -258,6 +261,51 @@ func (s *Server) deviceConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
+}
+
+// deviceInstructions fetches the rendered instruction for one device. The asset
+// base is handed to the panel so image links point back at this service: the
+// person's browser never talks to the panel and never learns its address.
+func (s *Server) deviceInstructions(w http.ResponseWriter, r *http.Request) {
+	id := shortID(r.URL.Path)
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	base := "/" + id + "/api/assets/"
+	resp, err := s.panelCall(r.Context(), http.MethodGet,
+		"/api/v1/sub/"+id+"/devices/"+r.PathValue("id")+"/instructions?asset_base="+url.QueryEscape(base), nil, "")
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "панель недоступна, попробуйте позже"})
+		return
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(out)
+}
+
+// asset proxies an instruction image.
+func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
+	id := shortID(r.URL.Path)
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	resp, err := s.panelCall(r.Context(), http.MethodGet,
+		"/api/v1/sub/"+id+"/assets/"+r.PathValue("id"), nil, "")
+	if err != nil {
+		http.Error(w, "панель недоступна", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 8<<20))
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

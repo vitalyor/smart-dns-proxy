@@ -62,6 +62,8 @@ func (s *Server) subStatus(w http.ResponseWriter, r *http.Request) error {
 		"query_limit":  sub.QueryLimit,
 		"devices":      out,
 		"types":        deviceTypes,
+		// Lets the page tell "same as cached" from "refetch" without a restart.
+		"instructions_version": s.instructionsVersion(ctx),
 	})
 	return nil
 }

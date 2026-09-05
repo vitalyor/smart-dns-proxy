@@ -17,3 +17,4 @@ panel/web/dist/
 /LAUNCH-PLAN.html
 # Диагностические пробники доступности — не часть продукта.
 .blackbox/
+TODO.md
