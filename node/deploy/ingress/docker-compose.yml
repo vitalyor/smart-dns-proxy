@@ -50,6 +50,8 @@ services:
       # Live query-log source: the agent proxies dns-frontend's ring to the panel
       # (GET /v1/dns/log). Internal to the compose network; never published.
       DNS_LOG_URL: http://dns-frontend:9053/log
+      # Per-device tallies (how many queries, when last seen). No domains.
+      DNS_COUNTERS_URL: http://dns-frontend:9053/counters
     ports:
       # The panel connects here. Open ONLY to the panel IP in the firewall.
       - "${MGMT_BIND:-3333}:3333"

@@ -50,6 +50,9 @@ type Config struct {
 	// panel via GET /v1/dns/log. Empty (e.g. on egress) makes that route report
 	// "no query log on this node" instead of erroring.
 	DNSLogURL string
+	// DNSCountersURL is the sibling endpoint serving per-device tallies, proxied
+	// to the panel via GET /v1/dns/counters. Empty behaves the same way.
+	DNSCountersURL string
 }
 
 // Agent is the running node agent (an HTTPS server).
@@ -182,6 +185,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux.HandleFunc("POST /v1/cert/issue", a.wrap(a.handleCert))
 	mux.HandleFunc("POST /v1/access/tokens", a.wrap(a.handleAccess))
 	mux.HandleFunc("GET /v1/dns/log", a.wrap(a.handleDNSLog))
+	mux.HandleFunc("GET /v1/dns/counters", a.wrap(a.handleDNSCounters))
 
 	srv := &http.Server{
 		Addr:    a.cfg.ListenAddr,
