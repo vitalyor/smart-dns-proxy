@@ -178,7 +178,26 @@ func (s *Server) patchRuleSet(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	after, _ := store.One[store.RuleSet](r.Context(), s.DB, `SELECT * FROM rule_sets WHERE id=$1`, id)
+
+	// Компилятор берёт домены из активной версии списка, а не из manual_include.
+	// Без пересборки правка молча не доезжала: интерфейс показывал новые записи,
+	// ревизия собиралась и выкатывалась «успешно», а нода продолжала работать по
+	// старому списку. PATCH /services/{id}/domains делает пересборку — этот
+	// маршрут обязан вести себя так же.
+	var build *rules.BuildResult
+	if req.ManualInclude != nil || req.ManualExclude != nil || req.AllowRegex != nil {
+		b, err := s.rebuildActivate(r.Context(), id)
+		if err != nil {
+			return err
+		}
+		build = b
+	}
+
 	s.audit(r.Context(), r, "rule_set.updated", "rule_set", id, before, after)
+	if build != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"rule_set": after, "build": build})
+		return nil
+	}
 	writeJSON(w, http.StatusOK, after)
 	return nil
 }
