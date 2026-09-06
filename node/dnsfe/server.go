@@ -139,7 +139,7 @@ func (s *Server) Handle(req *dns.Msg, client netip.Addr, proto, dohToken string)
 			s.counts.hit(dohToken, start)
 		}
 		s.log.add(LogEntry{
-			TS: start.UnixMilli(), Client: client.String(), Proto: proto, Name: qname, Type: qtype,
+			TS: start.UnixMilli(), Client: client.String(), Token: dohToken, Proto: proto, Name: qname, Type: qtype,
 			Decision: decision, Rcode: rcode, MS: took.Milliseconds(),
 		})
 		if s.queryLog {

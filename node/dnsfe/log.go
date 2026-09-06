@@ -11,9 +11,13 @@ import (
 // can show live activity. Never persisted; bounded memory; no client IP (DoT/DoH
 // arrive via an internal proxy, so it would be meaningless anyway).
 type LogEntry struct {
-	Seq      uint64 `json:"seq"`
-	TS       int64  `json:"ts"` // unix milliseconds
-	Client   string `json:"client"`
+	Seq    uint64 `json:"seq"`
+	TS     int64  `json:"ts"` // unix milliseconds
+	Client string `json:"client"`
+	// Token identifies the device — the hash the router matches, the same value
+	// the counters are kept under. The panel swaps it for the device name; the
+	// browser has no business seeing access identifiers.
+	Token    string `json:"token,omitempty"`
 	Proto    string `json:"proto"`
 	Name     string `json:"name"`
 	Type     string `json:"type"`
