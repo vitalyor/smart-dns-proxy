@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -221,8 +224,58 @@ func (s *Server) nodeDNSLog(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("нода недоступна: %w", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(raw)
+	_, _ = w.Write(s.nameDevices(r.Context(), raw))
 	return nil
+}
+
+// nameDevices swaps each entry's device token for the device name. The node
+// only knows the token; the browser must never see it, because it is the
+// credential that grants DNS access. On any doubt the payload passes through
+// untouched minus the token — a log line without a name still beats no log.
+func (s *Server) nameDevices(ctx context.Context, raw []byte) []byte {
+	type row struct {
+		Token string `db:"token"`
+		Name  string `db:"name"`
+	}
+	names := map[string]string{}
+	rows, err := store.Many[row](ctx, s.DB,
+		`SELECT lower(token_hash) AS token, name FROM device_profiles WHERE revoked_at IS NULL`)
+	if err != nil {
+		slog.Warn("dns log: device names unavailable", "err", err)
+	}
+	for _, r := range rows {
+		names[r.Token] = r.Name
+	}
+	return swapTokensForNames(raw, names)
+}
+
+// swapTokensForNames does the swap itself, kept separate from the query so it
+// can be checked without a database.
+func swapTokensForNames(raw []byte, names map[string]string) []byte {
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return raw
+	}
+	entries, ok := payload["entries"].([]any)
+	if !ok || len(entries) == 0 {
+		return raw
+	}
+	for _, e := range entries {
+		m, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		tok, _ := m["token"].(string)
+		delete(m, "token")
+		if n := names[strings.ToLower(tok)]; n != "" {
+			m["device"] = n
+		}
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func (s *Server) nodeCertificate(w http.ResponseWriter, r *http.Request) error {

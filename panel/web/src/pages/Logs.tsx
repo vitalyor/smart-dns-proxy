@@ -4,7 +4,7 @@ import { Card, ErrorState, Notice, Spinner, useAsync, Stat, type Tone } from "..
 import { IconPlay, IconRefresh, IconPulse } from "../icons";
 
 type Entry = {
-  seq: number; ts: number; client: string; proto: string; name: string;
+  seq: number; ts: number; client: string; device?: string; proto: string; name: string;
   type: string; decision: string; rcode: string; ms: number;
 };
 type LogResp = { available?: boolean; seq: number; entries: Entry[] };
@@ -75,7 +75,8 @@ export default function Logs() {
     const needle = q.trim().toLowerCase();
     return entries.filter((e) =>
       (filter === "all" || kindOf(e.decision) === filter) &&
-      (needle === "" || e.name.toLowerCase().includes(needle)));
+      (needle === "" || e.name.toLowerCase().includes(needle) ||
+        (e.device ?? "").toLowerCase().includes(needle) || e.client.includes(needle)));
   }, [entries, filter, q]);
 
   // Сводка по накопленному окну.
@@ -124,6 +125,8 @@ export default function Logs() {
         Живой поток DNS-запросов с ноды. <b>Проксируется</b> — домен управляемого сервиса, ушёл через
         точку выхода; <b>Напрямую</b> — обычный домен, резолвился без прокси. Колонка <b>задержка</b> — время
         обработки DNS: маленькое значение при тормозящей странице значит, что дело не в DNS, а в канале.
+        Устройство определяется по его личному токену; прочерк — значит запрос пришёл без токена
+        (например, с самой ноды или со старого профиля).
       </Notice>
 
       {nodes.loading ? <Spinner />
@@ -154,7 +157,7 @@ export default function Logs() {
                   ))}
               </div>
               <div className="spacer" />
-              <input className="input" style={{ maxWidth: 260 }} value={q} placeholder="Поиск по домену…"
+              <input className="input" style={{ maxWidth: 260 }} value={q} placeholder="Поиск по домену или устройству…"
                 onChange={(e) => setQ(e.target.value)} />
             </div>
 
@@ -164,7 +167,7 @@ export default function Logs() {
               <div className="table-wrap">
                 <table className="table logs">
                   <thead>
-                    <tr><th style={{ width: 92 }}>Время</th><th style={{ width: 128 }}>Источник</th><th>Домен</th><th style={{ width: 56 }}>Тип</th>
+                    <tr><th style={{ width: 92 }}>Время</th><th style={{ width: 150 }}>Устройство</th><th>Домен</th><th style={{ width: 56 }}>Тип</th>
                       <th style={{ width: 150 }}>Решение</th><th style={{ width: 130 }}>Задержка</th><th style={{ width: 90 }}>Ответ</th></tr>
                   </thead>
                   <tbody>
@@ -196,7 +199,11 @@ function Row({ e }: { e: Entry }) {
   return (
     <tr>
       <td className="tiny dim num">{new Date(e.ts).toLocaleTimeString("ru-RU")}</td>
-      <td className="tiny mono" title={e.client || undefined}>{e.client || "—"}</td>
+      <td title={e.client || undefined}>
+        {e.device
+          ? <><div className="small">{e.device}</div><div className="tiny mono dim">{e.client}</div></>
+          : <span className="tiny mono dim">{e.client || "—"}</span>}
+      </td>
       <td className="mono small" style={{ wordBreak: "break-all" }}>
         {e.name}
         <span className="proto-tag">{e.proto}</span>
