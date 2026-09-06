@@ -9,8 +9,8 @@ services:
       context: ../..
       dockerfile: subpage/deploy/Dockerfile
       args:
-        VERSION: ${SMARTDNS_VERSION:-2.1.0}
-    image: smartdns/subscription-page:${SMARTDNS_VERSION:-2.1.0}
+        VERSION: ${SMARTDNS_VERSION:-0.4.0}
+    image: smartdns/subscription-page:${SMARTDNS_VERSION:-0.4.0}
     restart: unless-stopped
     environment:
       # Адрес панели. В проде — публичный, на этапе разработки можно соседний контейнер.
