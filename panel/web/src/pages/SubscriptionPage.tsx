@@ -92,7 +92,7 @@ function PageSettings({ owner }: { owner: boolean }) {
         }>
         <Field label="Адрес страницы" error={urlError}
           hint="Туда, где запущен сервис страницы подписки. Личная ссылка собирается как адрес/идентификатор.">
-          <input className="input mono" value={url} placeholder="https://my.example.net"
+          <input className="input mono" value={url} placeholder="https://my.example.com"
             onChange={(e) => setUrl(e.target.value)} />
         </Field>
         {insecure && (

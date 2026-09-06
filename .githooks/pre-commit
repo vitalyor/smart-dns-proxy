@@ -1,0 +1,3 @@
+#!/bin/sh
+# Включается один раз: git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/check-secrets.sh"
