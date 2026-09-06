@@ -119,7 +119,11 @@ export default function Dashboard() {
                   {data.services.map((s) => (
                     <tr key={s.id}>
                       <td>
-                        <div style={{ fontWeight: 550 }}>{s.name}</div>
+                        <div className="row" style={{ gap: 8 }}>
+                          <span style={{ fontWeight: 550 }}>{s.name}</span>
+                          {/* Выключенный сервис в общем списке выглядел работающим. */}
+                          {!s.enabled && <span className="badge">выключен</span>}
+                        </div>
                         <div className="tiny dim mono">{s.slug}</div>
                       </td>
                       <td className="num">{s.rules}</td>
