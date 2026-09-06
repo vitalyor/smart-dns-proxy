@@ -12,6 +12,7 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - 'catalog/**'
       - '.gitignore'
   workflow_dispatch:
 
