@@ -129,12 +129,18 @@ if ! docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 docker compose --env-file .env up -d --pull always
 
+# Ждём без пайпа намеренно. При `set -o pipefail` grep -q закрывает поток на
+# первом совпадении, docker compose получает SIGPIPE, и пайплайн возвращает 141
+# — то есть «не нашли» ровно тогда, когда нашли. Установка из-за этого ругалась
+# «агент не поднялся» на живом, работающем агенте.
 info "Ожидание, пока агент начнёт слушать порт управления"
+up=0
 for _ in $(seq 1 40); do
-  if docker compose logs node-agent 2>/dev/null | grep -q 'agent listening'; then break; fi
+  logs=$(docker compose logs node-agent 2>/dev/null || true)
+  case "$logs" in *"agent listening"*) up=1; break;; esac
   sleep 3
 done
-docker compose logs node-agent 2>/dev/null | grep -q 'agent listening' \
+[[ $up -eq 1 ]] \
   || die "агент не поднялся. Смотрите: docker compose -f $DIR/docker-compose.yml logs node-agent"
 ok "агент слушает порт $MGMT_PORT, ждёт подключения панели"
 
