@@ -245,7 +245,6 @@ h3 { font-size: 15px; }
   background: var(--managed); color: var(--on-managed);
   padding: 3px 6px; border-radius: 20px;
 }
-.rail-foot { margin-top: auto; padding: 16px 10px 0; border-top: 1px dashed var(--line); }
 
 .main { min-width: 0; display: flex; flex-direction: column; }
 .topbar {
@@ -258,6 +257,16 @@ h3 { font-size: 15px; }
 }
 .topbar .spacer { flex: 1; }
 .topbar .nav-toggle { display: none; }
+
+/* учётка в правом верхнем углу: меню её больше не загораживает */
+.acct { display: flex; align-items: center; gap: 8px; }
+.acct .seg-btn { padding: 5px 9px; }
+.acct .seg-btn svg { display: block; }
+.acct-who {
+  font-size: 12.5px; color: var(--text-2);
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (max-width: 900px) { .acct-who { display: none; } }
 .page { padding: 28px 32px 88px; max-width: 1520px; width: 100%; }
 .page > * + * { margin-top: 20px; }
 
@@ -418,6 +427,9 @@ h3 { font-size: 15px; }
 .hostport .field { margin: 0; }
 .table.fixed { table-layout: fixed; }
 .table.fixed td, .table.fixed th { overflow: hidden; text-overflow: ellipsis; }
+/* Кнопки не текст: подрезать их многоточием — значит спрятать действие так,
+   что до него не добраться. Пусть лучше ячейка прокрутится. */
+.table.fixed td.actions { overflow: visible; text-overflow: clip; }
 textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 100%; }
 
 .node-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
@@ -504,6 +516,10 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .table td.actions > * + * { margin-left: 6px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .table-wrap { overflow-x: auto; }
+/* Проценты у fixed-раскладки сжимают колонки до нечитаемости, как только
+   окно уже макета. Минимальная ширина превращает это в честную прокрутку:
+   лучше сдвинуть таблицу вбок, чем обрезать статус и кнопки. */
+.table-wrap > .table.fixed { min-width: 860px; }
 
 /* ============================ формы ============================ */
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -521,6 +537,10 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .input:focus, .select:focus, .textarea:focus { border-color: var(--direct); outline: none; box-shadow: var(--glow); }
 .input::placeholder, .textarea::placeholder { color: var(--text-3); opacity: .65; font-family: var(--sans); font-size: 13px; }
 .input.mono, .textarea.mono { font-family: var(--mono); font-size: 13px; }
+
+/* флаг страны: эмодзи, поэтому только размер и ровная базовая линия */
+.flag { font-size: 15px; line-height: 1; flex: none; }
+.flag.lg { font-size: 22px; }
 .check { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--direct); }
 
@@ -687,3 +707,56 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .howto-preview pre code { background: none; border: 0; padding: 0; }
 .howto-preview blockquote { margin: 10px 0; padding: 6px 0 6px 14px; border-left: 3px solid var(--line); color: var(--text-3); }
 .howto-preview img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+
+/* ===================== главная: состояние выката ===================== */
+/* Строка всегда на виду и отвечает на один вопрос: доехала ли конфигурация.
+   Цвет дублируется словами и точкой — на цвет одному полагаться нельзя. */
+.deploybar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 18px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface);
+}
+.deploybar-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--text-3); }
+.deploybar.ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.deploybar.ok .deploybar-dot { background: var(--ok); }
+.deploybar.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.deploybar.warn .deploybar-dot { background: var(--warn); }
+.deploybar.bad { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.deploybar.bad .deploybar-dot { background: var(--danger); }
+.deploybar-main { flex: 1; min-width: 240px; }
+.deploybar-title { font-weight: 550; font-size: 14.5px; }
+.deploybar-sub { font-size: 12.5px; color: var(--text-2); margin-top: 3px; line-height: 1.45; }
+.deploybar-nodes { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font: 500 12px/1 var(--mono); padding: 5px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text-2);
+}
+.chip.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+.chip.warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); color: var(--warn); }
+.chip.bad { border-color: color-mix(in srgb, var(--danger) 50%, transparent); color: var(--danger); }
+
+/* ===================== главная: сводка сервисов ===================== */
+.digest {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 14px 22px; border-bottom: 1px solid var(--line-soft);
+}
+.digest-nums { font-size: 13.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.digest-nums b { color: var(--text); font-weight: 600; }
+.digest-nums .sep { margin: 0 8px; color: var(--text-3); }
+.digest .seg { margin-left: auto; }
+.digest .seg-btn { padding: 6px 12px; font-size: 12.5px; }
+.digest-ok { padding: 22px; font-size: 13.5px; color: var(--text-2); }
+
+/* лента событий: один ряд — одна строка, без вложенных отступов */
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 22px; border-bottom: 1px solid var(--line-soft);
+}
+.feed li:last-child { border-bottom: none; }
+
+@media (max-width: 720px) {
+  .deploybar { align-items: flex-start; }
+  .digest .seg { margin-left: 0; width: 100%; }
+  .digest .seg-btn { flex: 1; }
+}

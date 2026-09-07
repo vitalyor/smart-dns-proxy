@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ago, fmtTime, plural, timeTitle } from "../api";
-import { Card, ErrorState, Notice, Section, Spinner, Stat, StatusBadge, usePoll } from "../ui";
+import { api, ago, plural, timeTitle } from "../api";
+import { Card, ErrorState, Notice, Section, Spinner, Stat, usePoll } from "../ui";
 import { IconArrowIn, IconArrowOut, IconGrid, IconLayers } from "../icons";
 
 type NodeStat = { role: string; status: string; count: number; last_seen: string | null };
@@ -9,13 +10,18 @@ type SvcStat = {
   ingress_group: string | null; egress_group: string | null;
   last_probe: boolean | null; latency_ms: number | null;
 };
-type Alert = { level: string; code: string; message: string; hint: string };
+type Alert = { level: string; code: string; message: string; hint: string; action?: string; href?: string };
+type DeployNode = {
+  name: string; role: string; applied_sequence: number | null;
+  desired_sequence: number | null; behind: boolean; stale: boolean;
+};
 type Ev = { id: number; level: string; component: string; code: string; message: string; created_at: string };
 
 type Data = {
   nodes: NodeStat[]; services: SvcStat[];
   active_revision: { sequence: number; state: string; activated_at: string | null } | null;
   pending_rule_approvals: number; nodes_with_drift: number; nodes_stale: number;
+  deploy_nodes: DeployNode[];
   events: Ev[]; alerts: Alert[]; lab_mode: boolean;
 };
 
@@ -73,11 +79,20 @@ export default function Dashboard() {
         </div>
       </section>
 
+      <DeployBar nodes={data.deploy_nodes ?? []} seq={data.active_revision?.sequence ?? null} />
+
       {data.alerts.length > 0 && (
         <div className="col" style={{ gap: 10 }}>
           {data.alerts.map((a) => (
             <Notice key={a.code} kind={a.level === "error" ? "bad" : a.level === "warn" ? "warn" : "info"}
-              title={a.message}>{a.hint}</Notice>
+              title={a.message}>
+              {a.hint}
+              {a.href && (
+                <div style={{ marginTop: 10 }}>
+                  <Link className="btn sm" to={a.href}>{a.action}</Link>
+                </div>
+              )}
+            </Notice>
           ))}
         </div>
       )}
@@ -99,102 +114,148 @@ export default function Dashboard() {
         </div>
       </Section>
 
-      <Section title="Что происходит" note="сервисы и лента control plane">
-      <div className="grid g2">
-        <Card title="Сервисы" eyebrow="что проходит через инфраструктуру" tight
-          actions={<Link className="btn sm" to="/services">Настроить</Link>}>
-          {data.services.length === 0 ? (
-            <div className="empty">
-              <h3>Ни одного сервиса</h3>
-              <p className="muted small">Пройдите быстрый старт: набор правил → сервис → выкат.</p>
-              <Link className="btn primary" to="/setup" style={{ marginTop: 14 }}>Открыть быстрый старт</Link>
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr><th>Сервис</th><th>Правил</th><th>Маршрут</th><th>Проба</th></tr>
-                </thead>
-                <tbody>
-                  {data.services.map((s) => (
-                    <tr key={s.id}>
-                      <td>
-                        <div className="row" style={{ gap: 8 }}>
-                          <span style={{ fontWeight: 550 }}>{s.name}</span>
-                          {/* Выключенный сервис в общем списке выглядел работающим. */}
-                          {!s.enabled && <span className="badge">выключен</span>}
-                        </div>
-                        <div className="tiny dim mono">{s.slug}</div>
-                      </td>
-                      <td className="num">{s.rules}</td>
-                      <td className="tiny mono dim">
-                        {s.ingress_group ?? "—"} → {s.egress_group ?? "—"}
-                      </td>
-                      <td>
-                        {s.last_probe === null ? <span className="badge">нет данных</span>
-                          : s.last_probe ? <span className="badge ok">{s.latency_ms} мс</span>
-                          : <span className="badge bad">не прошла</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+      <Section title="Сервисы" note="что проходит через инфраструктуру"
+        actions={<Link className="btn sm" to="/services">Все сервисы</Link>}>
+        <ServiceDigest items={data.services} />
+      </Section>
 
-        <Card title="Последние события" eyebrow="лента control plane" tight
-          actions={<Link className="btn sm" to="/health">Все события</Link>}>
+      <Section title="Последние события" note="лента control plane"
+        actions={<Link className="btn sm" to="/health">Все события</Link>}>
+        <Card tight>
           {data.events.length === 0 ? (
-            <div className="empty"><h3>Событий пока нет</h3><p className="muted small">Здесь появятся выкаты, обновления списков и отказы нод.</p></div>
+            <div className="empty"><h3>Событий пока нет</h3>
+              <p className="muted small">Здесь появятся выкаты, обновления списков и отказы нод.</p></div>
           ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {data.events.slice(0, 9).map((e) => (
-                <li key={e.id} style={{ padding: "14px 22px", borderBottom: "1px solid var(--line-soft)" }}>
-                  <div className="row" style={{ gap: 8 }}>
-                    <span className={`badge ${e.level === "error" ? "bad" : e.level === "warn" ? "warn" : "plain"}`}>
-                      {e.component}
-                    </span>
-                    <span className="small" style={{ flex: 1, minWidth: 0 }}>{e.message}</span>
-                    <span className="tiny dim" title={timeTitle(e.created_at)}>{ago(e.created_at)}</span>
-                  </div>
+            <ul className="feed">
+              {data.events.slice(0, 8).map((e) => (
+                <li key={e.id}>
+                  <span className={`badge ${e.level === "error" ? "bad" : e.level === "warn" ? "warn" : "plain"}`}>
+                    {e.component}
+                  </span>
+                  <span className="small" style={{ flex: 1, minWidth: 0 }}>{e.message}</span>
+                  <span className="tiny dim" title={timeTitle(e.created_at)}>{ago(e.created_at)}</span>
                 </li>
               ))}
             </ul>
           )}
         </Card>
+      </Section>
+    </>
+  );
+}
+
+// DeployBar — состояние выката одной строкой, всегда на виду. Зелёная, когда все
+// ноды на назначенной конфигурации; жёлтая, когда кто-то отстал; красная, когда
+// нода молчит. Именно этого не хватало: расхождение было цифрой в плитке.
+function DeployBar({ nodes, seq }: { nodes: DeployNode[]; seq: number | null }) {
+  if (nodes.length === 0) return null;
+  const behind = nodes.filter((n) => n.behind);
+  const stale = nodes.filter((n) => n.stale);
+  const tone = stale.length ? "bad" : behind.length ? "warn" : "ok";
+  const applied = nodes.length - behind.length;
+
+  return (
+    <div className={`deploybar ${tone}`}>
+      <span className="deploybar-dot" aria-hidden="true" />
+      <div className="deploybar-main">
+        <div className="deploybar-title">
+          {tone === "ok" && <>Конфигурация {seq !== null ? `#${seq}` : "—"} применена на всех нодах</>}
+          {tone === "warn" && <>Конфигурация {seq !== null ? `#${seq}` : "—"} применена на {applied} из {nodes.length} нод</>}
+          {tone === "bad" && <>Нет связи с {stale.length === 1 ? "нодой" : "нодами"}: {stale.map((n) => n.name).join(", ")}</>}
+        </div>
+        <div className="deploybar-sub">
+          {tone === "ok" && "Все ноды подтвердили приём. Изменения применяются без перезапуска."}
+          {tone === "warn" && <>Отстают: {behind.map((n) => `${n.name} (#${n.applied_sequence ?? "—"})`).join(", ")}. Панель досылает сама.</>}
+          {tone === "bad" && "Трафик идёт по последней рабочей конфигурации. Новые изменения до этих нод не доедут."}
+        </div>
+      </div>
+      <div className="deploybar-nodes">
+        {nodes.map((n) => (
+          <span key={n.name} className={`chip ${n.stale ? "bad" : n.behind ? "warn" : "ok"}`}
+            title={`${n.role} · применена #${n.applied_sequence ?? "—"}${n.behind ? `, назначена #${n.desired_sequence ?? "—"}` : ""}`}>
+            {n.name}
+          </span>
+        ))}
+      </div>
+      <Link className="btn sm" to="/revisions">Выкаты</Link>
+    </div>
+  );
+}
+
+// ServiceDigest — восемьдесят строк таблицы не читаются. Сначала счёт по
+// состояниям, потом только то, что требует внимания; полный список живёт на
+// своей странице.
+function ServiceDigest({ items }: { items: SvcStat[] }) {
+  const [tab, setTab] = useState<"attention" | "all">("attention");
+  if (items.length === 0) {
+    return (
+      <Card tight>
+        <div className="empty">
+          <h3>Ни одного сервиса</h3>
+          <p className="muted small">Пройдите быстрый старт: набор правил → сервис → выкат.</p>
+          <Link className="btn primary" to="/setup" style={{ marginTop: 14 }}>Открыть быстрый старт</Link>
+        </div>
+      </Card>
+    );
+  }
+  const on = items.filter((s) => s.enabled);
+  const off = items.filter((s) => !s.enabled);
+  const failed = on.filter((s) => s.last_probe === false);
+  const unknown = on.filter((s) => s.last_probe === null);
+  const rules = items.reduce((a, s) => a + s.rules, 0);
+  const attention = [...failed, ...unknown];
+  const rows = tab === "attention" ? attention : items;
+
+  return (
+    <Card tight>
+      <div className="digest">
+        <div className="digest-nums">
+          <b>{on.length}</b> включено<span className="sep">·</span>
+          <b>{off.length}</b> выключено<span className="sep">·</span>
+          <b>{rules}</b> {plural(rules, "правило", "правила", "правил").split(" ")[1]}
+        </div>
+        <div className="seg tone-neutral">
+          <button className={`seg-btn${tab === "attention" ? " sel" : ""}`} onClick={() => setTab("attention")}>
+            Требуют внимания{attention.length ? ` · ${attention.length}` : ""}
+          </button>
+          <button className={`seg-btn${tab === "all" ? " sel" : ""}`} onClick={() => setTab("all")}>
+            Все · {items.length}
+          </button>
+        </div>
       </div>
 
-      </Section>
-
-      <Section title="Ноды" note="по ролям и статусам" actions={<Link className="btn sm" to="/nodes">Управление</Link>}>
-      <Card tight
-        >
-        <div className="table-wrap">
+      {rows.length === 0 ? (
+        <div className="digest-ok">
+          Все включённые сервисы прошли проверку доступности.
+        </div>
+      ) : (
+        <div className="table-wrap" style={{ maxHeight: 420, overflowY: "auto" }}>
           <table className="table">
-            <thead><tr><th>Роль</th><th>Статус</th><th>Нод</th><th>Последний контакт</th></tr></thead>
+            <thead><tr><th>Сервис</th><th>Правил</th><th>Маршрут</th><th>Проба</th></tr></thead>
             <tbody>
-              {data.nodes.length === 0 && (
-                <tr><td colSpan={4}><div className="empty" style={{ padding: 24 }}>
-                  <h3>Нод пока нет</h3>
-                  <p className="muted small">Создайте одноразовый токен и запустите установщик на сервере.</p>
-                  <Link className="btn primary" to="/nodes" style={{ marginTop: 12 }}>Добавить ноду</Link>
-                </div></td></tr>
-              )}
-              {data.nodes.map((n, i) => (
-                <tr key={i}>
-                  <td><span className={`badge ${n.role === "ingress" ? "direct" : "managed"}`}>{n.role}</span></td>
-                  <td><StatusBadge status={n.status} /></td>
-                  <td className="num">{n.count}</td>
-                  <td className="small dim" title={timeTitle(n.last_seen)}>{fmtTime(n.last_seen)}</td>
+              {rows.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <div className="row" style={{ gap: 8 }}>
+                      <span style={{ fontWeight: 550 }}>{s.name}</span>
+                      {!s.enabled && <span className="badge">выключен</span>}
+                    </div>
+                    <div className="tiny dim mono">{s.slug}</div>
+                  </td>
+                  <td className="num">{s.rules}</td>
+                  <td className="tiny mono dim">{s.ingress_group ?? "—"} → {s.egress_group ?? "—"}</td>
+                  <td>
+                    {s.last_probe === null ? <span className="badge">нет данных</span>
+                      : s.last_probe ? <span className="badge ok">{s.latency_ms} мс</span>
+                      : <span className="badge bad">не прошла</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </Card>
-      </Section>
-    </>
+      )}
+    </Card>
   );
 }
 
