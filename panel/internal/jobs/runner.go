@@ -198,13 +198,12 @@ func (r *Runner) scheduleProbes(ctx context.Context) error {
 // treated as healthy.
 func (r *Runner) probeService(ctx context.Context, serviceID string) error {
 	type row struct {
-		Name    string         `db:"name"`
-		Slug    string         `db:"slug"`
-		Probe   map[string]any `db:"probe"`
-		GroupID *string        `db:"ingress_group_id"`
+		Name  string         `db:"name"`
+		Slug  string         `db:"slug"`
+		Probe map[string]any `db:"probe"`
 	}
 	sv, err := store.One[row](ctx, r.DB,
-		`SELECT name, slug, probe, ingress_group_id FROM services WHERE id=$1`, serviceID)
+		`SELECT name, slug, probe FROM services WHERE id=$1`, serviceID)
 	if err != nil {
 		return err
 	}
@@ -221,12 +220,10 @@ func (r *Runner) probeService(ctx context.Context, serviceID string) error {
 		Name string  `db:"name"`
 		IPv4 *string `db:"public_ipv4"`
 	}
-	if sv.GroupID == nil {
-		return nil
-	}
 	nodes, err := store.Many[nodeRow](ctx, r.DB, `
-		SELECT n.id::text, n.name, n.public_ipv4 FROM ingress_group_members m
-		JOIN nodes n ON n.id=m.node_id WHERE m.group_id=$1 AND m.enabled AND n.status <> 'disabled'`, *sv.GroupID)
+		SELECT n.id::text, n.name, n.public_ipv4 FROM service_nodes sn
+		JOIN nodes n ON n.id=sn.node_id
+		WHERE sn.service_id=$1 AND n.role='ingress' AND n.status <> 'disabled'`, serviceID)
 	if err != nil {
 		return err
 	}

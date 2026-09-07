@@ -21,7 +21,7 @@
 - Unbound как рекурсивный кеширующий DNS resolver;
 - sing-box как основной программируемый транспортный data plane;
 - импорт, объединение, проверку и версионирование списков доменов из GitHub/HTTP;
-- группы нод, health checks, автоматический failover и last-known-good конфигурации;
+- health checks, автоматический failover в пределах страны и last-known-good конфигурации;
 - установку через Docker Compose и воспроизводимые install-скрипты;
 - безопасность, аудит, метрики, логи, резервное копирование и полноценный test plan.
 
@@ -29,7 +29,7 @@
 
 1. Установить панель одной командой на homelab или любой VPS.
 2. Добавить ingress-ноду в РФ и egress-ноду в нужной стране одной командой с одноразовым enrollment-токеном.
-3. Создать сервис, например `Gemini`, подключить GitHub rule-set и выбрать ingress/egress group.
+3. Создать сервис, например `Gemini`, подключить GitHub rule-set и отметить ноды входа и выхода.
 4. Скачать инструкцию или профиль настройки DNS для Android, iOS/macOS, Windows и роутера.
 5. При выключенной панели продолжать пользоваться уже применённой конфигурацией.
 6. При отказе egress-ноды автоматически переключаться на резервную без ручной правки нод.
@@ -60,7 +60,7 @@
 - Синтез A и, при наличии IPv6, AAAA для managed domains.
 - SNI sniffing без TLS termination и без MITM.
 - Защищённый ingress→egress транспорт средствами sing-box; обязательный базовый профиль — VLESS поверх TLS/Reality либо иной один явно зафиксированный и протестированный профиль. Дополнительный профиль WireGuard допускается.
-- Active-active и primary/fallback группы ingress; primary/fallback, weighted и lowest-latency группы egress.
+- Ноды выбираются в сервисе: вход отдаётся multi-A, выход работает по порядку — первая живая нода, остальные резерв.
 - GitHub raw, произвольный HTTPS URL, GitHub repository/path, manual list и built-in preset.
 - Plain domain list, `domain:`, `domain-suffix:`, wildcard и sing-box source rule-set JSON. Regex разрешать только в расширенном режиме.
 - Auto-apply и manual-approve обновлений.
@@ -209,7 +209,7 @@ Control plane публикует желаемое состояние. Агент
 ### 9.1. Функции панели
 
 - логин администратора, смена пароля, TOTP 2FA, управление сессиями;
-- CRUD нод, групп, сервисов, rule-set, источников, policies и device profiles;
+- CRUD нод, сервисов, rule-set, источников, policies и device profiles;
 - выдача одноразовых enrollment-токенов;
 - плановое скачивание rule-set;
 - preview diff, approval, компиляция revision;
@@ -345,7 +345,7 @@ Frontend принимает DNS message, приводит QNAME к lowercase FQD
 
 Для managed domain:
 
-- A содержит только eligible ingress addresses выбранной группы;
+- A содержит только eligible ingress addresses, выбранные в сервисе;
 - AAAA выдаётся только при полностью работающем IPv6 data path; иначе NODATA, но не поддельный IPv6;
 - TTL по умолчанию 60 секунд, диапазон 30–300;
 - не копировать AD из стороннего ответа;
@@ -505,30 +505,19 @@ UI diff показывает counts, первые/последние измен�
 
 Все artifacts одного revision имеют общий manifest ID. Смешивание версий запрещено.
 
-## 15. Services, groups и routing policy
+## 15. Services и routing policy
 
 ### 15.1. Service
 
-Поля: name, slug, enabled, rule_set_id, ingress_group_id, egress_group_id, route_policy_id, allowed_ports, TCP/UDP mode, DNS TTL, priority, notes и probe definitions.
+Поля: name, slug, enabled, rule_set_id, allowed_ports, TCP/UDP mode, DNS TTL, priority, notes и probe definitions. Ноды сервиса — отдельный список (`service_nodes`), упорядоченный по приоритету.
 
-### 15.2. Ingress group
+### 15.2. Ноды сервиса
 
-Режимы:
+Групп нод нет. Ноды выбираются прямо в сервисе, а порядок в списке — это порядок отказа.
 
-- `active_active`: DNS возвращает все healthy members, с rotation порядка;
-- `primary_fallback`: возвращается primary, fallback — после подтверждённого отказа;
-- `weighted`: адреса выдаются с контролируемой вероятностью; веса применяются на запрос, не обещают точного распределения.
+**Вход.** DNS возвращает адреса всех eligible входных нод сервиса, порядок ротируется на ответ. Обычные primary/secondary DNS-настройки ОС не являются гарантированным failover: ОС могут использовать оба сервера или долго держаться за первый. Это должно быть отражено в UI и документации.
 
-Обычные primary/secondary DNS-настройки ОС не являются гарантированным failover: ОС могут использовать оба сервера или долго держаться за первый. Это должно быть отражено в UI и документации.
-
-### 15.3. Egress group
-
-- `primary_fallback`;
-- `weighted`;
-- `lowest_latency` с hysteresis;
-- `manual_fixed`.
-
-`least_connections` MAY быть добавлен, только если контроллер имеет достаточно свежие данные; глобально точное значение без общей state plane не обещать.
+**Выход.** Работает первая живая нода по порядку; остальные — резерв. Режимов раздачи нет и не должно быть: `weighted` выбирал ноду заново на каждое соединение, поэтому один клиент уходил к сайту через несколько стран сразу, и сайт видел это как угон аккаунта. По той же причине все выходные ноды одного сервиса обязаны быть из одной страны — это проверяет и API при сохранении, и компилятор перед выкатом.
 
 ### 15.4. Failover semantics
 
@@ -591,16 +580,13 @@ Rollout по умолчанию: одна canary ingress + одна canary egres
 | nodes | name unique, role, public_ipv4/6, agent_version, desired_revision_id, applied_revision_id, status, last_seen_at |
 | node_identities | node_id, cert_serial, public_key, fingerprint, not_before/after, revoked_at |
 | enrollment_tokens | token_hash unique, role, expires_at, used_at |
-| ingress_groups | name unique, mode, settings_json |
-| ingress_group_members | group_id, node_id, priority, weight, enabled; unique pair |
-| egress_groups | name unique, mode, settings_json |
-| egress_group_members | group_id, node_id, priority, weight, enabled; unique pair |
+| service_nodes | service_id, node_id, priority; unique pair |
 | rule_sets | name unique, update_mode, interval, active_version_id, priority |
 | rule_sources | rule_set_id, type, url/repo/ref/path, include_or_exclude, enabled, secret_id |
 | rule_fetches | source_id, status, http metadata, content_hash, size, error, started/finished_at |
 | rule_set_versions | rule_set_id, sequence, content_hash, counts_json, status, source_manifest_json |
 | rule_entries | version_id, kind exact/suffix/regex, value; unique(version,kind,value) |
-| services | name/slug unique, rule_set_id, ingress_group_id, egress_group_id, policy_id, settings_json |
+| services | name/slug unique, rule_set_id, policy_id, settings_json |
 | route_policies | name unique, mode, settings_json |
 | health_checks | scope_type/id, type, config_json, enabled |
 | health_samples | check_id, node_id, success, latency_ms, error_code, observed_at; partition/retention |
@@ -637,8 +623,6 @@ GET/POST       /nodes              GET/PATCH/DELETE /nodes/{id}
 POST           /nodes/enrollment-tokens
 POST           /nodes/{id}/maintenance
 
-GET/POST       /ingress-groups     GET/PATCH/DELETE /ingress-groups/{id}
-GET/POST       /egress-groups      GET/PATCH/DELETE /egress-groups/{id}
 GET/POST       /services           GET/PATCH/DELETE /services/{id}
 GET/POST       /route-policies     GET/PATCH/DELETE /route-policies/{id}
 
@@ -817,7 +801,7 @@ Wizard запрашивает public URL, TLS mode, timezone/display locale, adm
 
 ### 24.3. Добавление первого сервиса
 
-UI wizard: Rule Set → source/preview → Service → ingress group → egress group → probe → compile → canary deploy → generate device profile → guided verification (`dig`, TLS certificate, observed egress IP).
+UI wizard: Rule Set → source/preview → Service → ноды входа и выхода → probe → compile → canary deploy → generate device profile → guided verification (`dig`, TLS certificate, observed egress IP).
 
 ### 24.4. Upgrade и rollback
 
@@ -845,7 +829,7 @@ RPO default 24 h, RTO target 2 h для персональной установ�
 | Source вернул HTML/empty/corrupt | Candidate rejected; LKG остаётся. |
 | Compiler bug/invalid sing-box config | Pre-apply validation fail; ничего не перезапускается. |
 | Agent crash | Data plane контейнеры продолжают работу; supervisor перезапускает agent. |
-| Ingress down | DNS group исключает ноду после threshold; клиентский failover зависит от DNS cache/OS. |
+| Ingress down | DNS исключает ноду после threshold; клиентский failover зависит от DNS cache/OS. |
 | Egress down | Новые соединения локально идут на fallback; существующие могут оборваться. |
 | Tunnel partition | Egress marked unhealthy for affected ingress; другой egress используется. |
 | Unbound down | Managed synthesized answers MAY работать; обычные DNS получают SERVFAIL, alert; не отдавать ложные ответы. |
@@ -981,7 +965,7 @@ Kill/restart каждый container, network loss panel↔node и ingress↔egre
 - [ ] Невключённый SNI и private destination нельзя использовать как open proxy.
 - [ ] Один rule-set revision одновременно управляет DNS, ingress routing и egress allowlist.
 - [ ] GitHub update проходит diff/validation/activation; битый/пустой update не заменяет LKG.
-- [ ] Две ingress и две egress ноды работают в группах.
+- [ ] Две ingress и две egress ноды работают в одном сервисе.
 - [ ] При падении primary egress новые соединения идут через fallback в пределах health thresholds.
 - [ ] При падении панели data plane работает минимум 24 часа без degradation из-за control plane.
 - [ ] Broken revision автоматически откатывается.
@@ -1007,11 +991,11 @@ DNS frontend, Unbound, одна ingress/egress, статический rule-set,
 
 ### Phase 2 — control plane и agent
 
-Enrollment, nodes/groups/services, compiler, immutable revisions, atomic apply/rollback, базовый UI.
+Enrollment, nodes/services, compiler, immutable revisions, atomic apply/rollback, базовый UI.
 
 ### Phase 3 — rule sources и failover
 
-GitHub/HTTP fetch, diff/approval/LKG, health controller, multi-node groups, canary rollout.
+GitHub/HTTP fetch, diff/approval/LKG, health controller, несколько нод на сервис, canary rollout.
 
 ### Phase 4 — security/operations
 

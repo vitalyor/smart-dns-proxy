@@ -760,3 +760,20 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
   .digest .seg { margin-left: 0; width: 100%; }
   .digest .seg-btn { flex: 1; }
 }
+
+/* выбор нод сервиса: строка-переключатель вместо выпадающего списка — видно
+   сразу все ноды, их страны и то, какая из них основная */
+.pick {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; margin-bottom: 6px;
+  border: 1px solid var(--line-soft); border-radius: 10px;
+  cursor: pointer; font-size: 13.5px;
+}
+.pick:hover { border-color: var(--line); }
+.pick.on { border-color: var(--accent); background: var(--surface-2); }
+.pick input { accent-color: var(--accent); }
+.pick-name { font-weight: 550; }
+.pick .badge { margin-left: 0; }
+
+/* маршрут в списке сервисов: флаги и имена нод в одну строку */
+.route-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }

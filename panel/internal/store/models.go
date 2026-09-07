@@ -107,24 +107,22 @@ type RuleSetVersion struct {
 
 // Service is a managed logical service.
 type Service struct {
-	ID             string         `db:"id" json:"id"`
-	Name           string         `db:"name" json:"name"`
-	Slug           string         `db:"slug" json:"slug"`
-	Description    string         `db:"description" json:"description"`
-	Enabled        bool           `db:"enabled" json:"enabled"`
-	RuleSetID      *string        `db:"rule_set_id" json:"rule_set_id"`
-	IngressGroupID *string        `db:"ingress_group_id" json:"ingress_group_id"`
-	EgressGroupID  *string        `db:"egress_group_id" json:"egress_group_id"`
-	RoutePolicyID  *string        `db:"route_policy_id" json:"route_policy_id"`
-	AllowedPorts   []int32        `db:"allowed_ports" json:"allowed_ports"`
-	UDPMode        string         `db:"udp_mode" json:"udp_mode"`
-	DNSTTL         int            `db:"dns_ttl" json:"dns_ttl"`
-	Priority       int            `db:"priority" json:"priority"`
-	Notes          string         `db:"notes" json:"notes"`
-	Probe          map[string]any `db:"probe" json:"probe"`
-	Version        int64          `db:"version" json:"version"`
-	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time      `db:"updated_at" json:"updated_at"`
+	ID            string         `db:"id" json:"id"`
+	Name          string         `db:"name" json:"name"`
+	Slug          string         `db:"slug" json:"slug"`
+	Description   string         `db:"description" json:"description"`
+	Enabled       bool           `db:"enabled" json:"enabled"`
+	RuleSetID     *string        `db:"rule_set_id" json:"rule_set_id"`
+	RoutePolicyID *string        `db:"route_policy_id" json:"route_policy_id"`
+	AllowedPorts  []int32        `db:"allowed_ports" json:"allowed_ports"`
+	UDPMode       string         `db:"udp_mode" json:"udp_mode"`
+	DNSTTL        int            `db:"dns_ttl" json:"dns_ttl"`
+	Priority      int            `db:"priority" json:"priority"`
+	Notes         string         `db:"notes" json:"notes"`
+	Probe         map[string]any `db:"probe" json:"probe"`
+	Version       int64          `db:"version" json:"version"`
+	CreatedAt     time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time      `db:"updated_at" json:"updated_at"`
 }
 
 // Revision is an immutable compiled configuration snapshot.

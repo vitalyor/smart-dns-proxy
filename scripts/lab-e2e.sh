@@ -114,19 +114,15 @@ CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X PUT -b "$JAR" -c "$JAR" \
 api PUT /settings '{"log_level":"info","node_log_level":"warn"}' >/dev/null
 ok "уровни логирования панели и нод заданы"
 
-IG=$(api POST /ingress-groups '{"name":"Вход РФ","mode":"active_active","settings":{}}' | jsonq "d['id']")
-EG=$(api POST /egress-groups  '{"name":"Выход ЕС","mode":"primary_fallback","settings":{}}' | jsonq "d['id']")
-api POST "/ingress-groups/$IG/members" "{\"node_id\":\"$ING1_ID\",\"priority\":1,\"weight\":1}" >/dev/null
-api POST "/ingress-groups/$IG/members" "{\"node_id\":\"$ING2_ID\",\"priority\":2,\"weight\":1}" >/dev/null
-api POST "/egress-groups/$EG/members"  "{\"node_id\":\"$EGR_ID\",\"priority\":1,\"weight\":1}" >/dev/null
-ok "группы созданы, обе ingress и egress добавлены"
 
 RS=$(api POST /rule-sets '{"name":"Тестовый список","update_mode":"manual_only","interval_sec":21600,"manual_include":["origin.test"],"manual_exclude":[]}' | jsonq "d['id']")
 FETCH=$(api POST "/rule-sets/$RS/fetch" '{}')
 echo "$FETCH" | grep -q '"content_hash"' && ok "набор правил нормализован" || bad "набор правил не собрался: $FETCH"
 
-api POST /services "{\"name\":\"Тестовый сервис\",\"slug\":\"testsvc\",\"rule_set_id\":\"$RS\",\"ingress_group_id\":\"$IG\",\"egress_group_id\":\"$EG\",\"allowed_ports\":[443],\"dns_ttl\":60,\"priority\":100,\"udp_mode\":\"disabled_fallback\",\"probe\":{\"hostname\":\"origin.test\",\"port\":443}}" >/dev/null
-ok "сервис создан"
+# Ноды перечисляются прямо в сервисе: групп нет, порядок в списке — это порядок
+# отказа, а первая нода выхода — основная.
+api POST /services "{\"name\":\"Тестовый сервис\",\"slug\":\"testsvc\",\"rule_set_id\":\"$RS\",\"node_ids\":[\"$ING1_ID\",\"$ING2_ID\",\"$EGR_ID\"],\"allowed_ports\":[443],\"dns_ttl\":60,\"priority\":100,\"udp_mode\":\"disabled_fallback\",\"probe\":{\"hostname\":\"origin.test\",\"port\":443}}" >/dev/null
+ok "сервис создан с тремя нодами"
 
 step "6/8 Сборка и выкат ревизии"
 REV=$(api POST /revisions/compile '{"deploy":true}')
@@ -137,7 +133,7 @@ wait_for 180 "панель протолкнула ревизию на все н�
   "curl -sS -b '$JAR' '$PANEL/nodes' | python3 -c \"import sys,json;d=json.load(sys.stdin);ns=d['items'];sys.exit(0 if len(ns)==3 and all(n['applied_sequence'] and n['applied_sequence']==n['desired_sequence'] for n in ns) else 1)\""
 ok "все три ноды применили ревизию (push)"
 
-# Two ingress nodes in one group must run the SAME services and rules — the
+# Two ingress nodes of one service must run the SAME services and rules — the
 # panel compiles once and pushes an identical service set to both.
 svc_of() { "${COMPOSE[@]}" exec -T "$1" cat /var/lib/smartdns-agent/active/config.json 2>/dev/null \
   | python3 -c "import json,sys;d=json.load(sys.stdin);print(sorted(s['slug'] for s in d.get('services',[])))" 2>/dev/null || true; }
@@ -159,7 +155,7 @@ LVL=$("${COMPOSE[@]}" exec -T sni-proxy cat /var/lib/smartdns-agent/active/confi
 step "7/8 Проверка поведения data plane"
 cx() { "${COMPOSE[@]}" exec -T client "$@"; }
 
-# active_active: each ingress publishes the whole group's A-set, so one query
+# Each ingress publishes the whole A-set of the service, so one query
 # already gives the device multi-A failover.
 MANAGED=$(cx dig +short +timeout=3 origin.test @172.28.0.20 2>/dev/null | grep -E '^172\.28\.0\.(20|25)$' | sort | tr '\n' ' ')
 [[ "$MANAGED" == *172.28.0.20* && "$MANAGED" == *172.28.0.25* ]] \

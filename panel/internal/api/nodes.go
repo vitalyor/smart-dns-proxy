@@ -50,8 +50,10 @@ func installCommand(repo, ref, role string) string {
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 	type row struct {
 		store.Node
-		DesiredSeq   *int64   `db:"desired_sequence" json:"desired_sequence"`
-		Groups       []string `db:"groups" json:"groups"`
+		DesiredSeq *int64 `db:"desired_sequence" json:"desired_sequence"`
+		// Сервисы, которые используют эту ноду. Раньше здесь были группы;
+		// групп нет, а ответ на вопрос «где эта нода задействована» нужен.
+		Services     []string `db:"services" json:"services"`
 		CertDaysLeft *int     `db:"cert_days_left" json:"cert_days_left"`
 		ObservedIPv4 *string  `db:"observed_ipv4" json:"observed_ipv4"`
 	}
@@ -59,12 +61,9 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 		SELECT n.*, dr.sequence AS desired_sequence,
 		       NULLIF(n.health->>'cert_days_left','')::int AS cert_days_left,
 		       NULLIF(n.health->>'observed_ipv4','') AS observed_ipv4,
-		       COALESCE(
-		         (SELECT array_agg(g.name ORDER BY g.name) FROM ingress_group_members m
-		            JOIN ingress_groups g ON g.id = m.group_id WHERE m.node_id = n.id)
-		         || COALESCE((SELECT array_agg(g.name ORDER BY g.name) FROM egress_group_members m
-		            JOIN egress_groups g ON g.id = m.group_id WHERE m.node_id = n.id), '{}'),
-		         '{}') AS groups
+		       COALESCE((SELECT array_agg(sv.name ORDER BY sv.name)
+		         FROM service_nodes sn JOIN services sv ON sv.id = sn.service_id
+		         WHERE sn.node_id = n.id), '{}') AS services
 		FROM nodes n
 		LEFT JOIN revisions dr ON dr.id = n.desired_revision_id
 		LEFT JOIN revisions ar ON ar.id = n.applied_revision_id
@@ -160,14 +159,13 @@ func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request) error {
 		Kind string `db:"kind" json:"kind"`
 		Name string `db:"name" json:"name"`
 	}](r.Context(), s.DB, `
-		SELECT 'ingress_group' AS kind, g.name FROM ingress_group_members m JOIN ingress_groups g ON g.id=m.group_id WHERE m.node_id=$1
-		UNION ALL
-		SELECT 'egress_group', g.name FROM egress_group_members m JOIN egress_groups g ON g.id=m.group_id WHERE m.node_id=$1`, id)
+		SELECT 'service' AS kind, sv.name FROM service_nodes sn JOIN services sv ON sv.id=sn.service_id
+		WHERE sn.node_id=$1 ORDER BY sv.name`, id)
 	if err != nil {
 		return err
 	}
 	if len(deps) > 0 {
-		e := conflictErr("нода используется в группах; сначала удалите её из них")
+		e := conflictErr("нода используется в сервисах; сначала уберите её из них")
 		e.Details = deps
 		return e
 	}

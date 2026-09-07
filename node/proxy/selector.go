@@ -5,7 +5,6 @@ package proxy
 
 import (
 	"crypto/tls"
-	"math/rand"
 	"net"
 	"sort"
 	"sync"
@@ -77,8 +76,6 @@ func (t *target) observe(ok bool, d time.Duration, fail, rise int) {
 type pool struct {
 	policy  model.EgressPolicy
 	targets []*target
-	mu      sync.Mutex
-	sticky  string // currently preferred target for lowest_latency hysteresis
 }
 
 func newPool(p model.EgressPolicy, prev *pool) *pool {
@@ -110,7 +107,13 @@ func (p *pool) thresholds() (fail, rise int) {
 	return
 }
 
-// order returns candidate targets, healthy first, according to the policy.
+// order returns candidate targets, healthy first, in priority order.
+//
+// Порядок ровно один, режимов раздачи больше нет. Раздача по весам выбирала
+// ноду заново на каждое соединение, поэтому браузер, открывающий к сайту
+// десяток соединений сразу, уходил через несколько стран одновременно — под
+// одним аккаунтом это выглядит как угон. Список нод сервиса собран из одной
+// страны, и порядок в нём — это порядок отказа.
 func (p *pool) order() []*target {
 	var healthy, unhealthy []*target
 	for _, t := range p.targets {
@@ -120,111 +123,11 @@ func (p *pool) order() []*target {
 			unhealthy = append(unhealthy, t)
 		}
 	}
-	switch p.policy.Mode {
-	case "weighted":
-		healthy = weightedShuffle(healthy)
-	case "lowest_latency":
-		healthy = p.byLatency(healthy)
-	case "manual_fixed":
-		if len(healthy) > 1 {
-			healthy = healthy[:1]
-		}
-	default: // primary_fallback: already sorted by priority
-	}
 	// Unhealthy members stay as a last resort: a stale local health verdict
 	// must not make the service unreachable.
 	return append(healthy, unhealthy...)
 }
 
-func (p *pool) byLatency(ts []*target) []*target {
-	if len(ts) < 2 {
-		return ts
-	}
-	sorted := append([]*target(nil), ts...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		_, li := sorted[i].snapshot()
-		_, lj := sorted[j].snapshot()
-		if li == 0 {
-			return false
-		}
-		if lj == 0 {
-			return true
-		}
-		return li < lj
-	})
-	pct := p.policy.HysteresisPct
-	if pct <= 0 {
-		pct = 20
-	}
-	ms := float64(p.policy.HysteresisMs)
-	if ms <= 0 {
-		ms = 20
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.sticky == "" {
-		p.sticky = sorted[0].NodeID
-		return sorted
-	}
-	var cur *target
-	for _, t := range ts {
-		if t.NodeID == p.sticky {
-			cur = t
-		}
-	}
-	if cur == nil {
-		p.sticky = sorted[0].NodeID
-		return sorted
-	}
-	_, curL := cur.snapshot()
-	_, bestL := sorted[0].snapshot()
-	// Only switch when the candidate is faster by both margins.
-	if curL > 0 && bestL > 0 && bestL < curL*(1-float64(pct)/100) && curL-bestL > ms {
-		p.sticky = sorted[0].NodeID
-		return sorted
-	}
-	out := []*target{cur}
-	for _, t := range sorted {
-		if t.NodeID != cur.NodeID {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-func weightedShuffle(ts []*target) []*target {
-	rest := append([]*target(nil), ts...)
-	out := make([]*target, 0, len(rest))
-	for len(rest) > 0 {
-		total := 0
-		for _, t := range rest {
-			w := t.Weight
-			if w <= 0 {
-				w = 1
-			}
-			total += w
-		}
-		n := rand.Intn(total)
-		idx := 0
-		for i, t := range rest {
-			w := t.Weight
-			if w <= 0 {
-				w = 1
-			}
-			if n < w {
-				idx = i
-				break
-			}
-			n -= w
-		}
-		out = append(out, rest[idx])
-		rest = append(rest[:idx], rest[idx+1:]...)
-	}
-	return out
-}
-
-// probe performs a cheap TLS handshake against a target to keep local health
-// fresh even when there is no user traffic.
 func (p *pool) probe(tlsCfg *tls.Config, timeout time.Duration) {
 	fail, rise := p.thresholds()
 	for _, t := range p.targets {

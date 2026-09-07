@@ -25,26 +25,27 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	type svcStat struct {
-		ID        string  `db:"id" json:"id"`
-		Name      string  `db:"name" json:"name"`
-		Slug      string  `db:"slug" json:"slug"`
-		Enabled   bool    `db:"enabled" json:"enabled"`
-		Rules     int     `db:"rules" json:"rules"`
-		Ingress   *string `db:"ingress_group" json:"ingress_group"`
-		Egress    *string `db:"egress_group" json:"egress_group"`
+		ID      string `db:"id" json:"id"`
+		Name    string `db:"name" json:"name"`
+		Slug    string `db:"slug" json:"slug"`
+		Enabled bool   `db:"enabled" json:"enabled"`
+		Rules   int    `db:"rules" json:"rules"`
+		// Куда сервис выходит: страна и нода. Раньше здесь было имя группы —
+		// оно ничего не говорило о том, из какой страны увидят пользователя.
+		Egress    *string `db:"egress" json:"egress"`
 		LastProbe *bool   `db:"last_probe" json:"last_probe"`
 		LatencyMs *int    `db:"latency_ms" json:"latency_ms"`
 	}
 	svcStats, err := store.Many[svcStat](ctx, s.DB, `
 		SELECT sv.id::text, sv.name, sv.slug, sv.enabled,
 		  (SELECT count(*)::int FROM rule_entries re WHERE re.version_id = rs.active_version_id) AS rules,
-		  ig.name AS ingress_group, eg.name AS egress_group,
+		  (SELECT string_agg(DISTINCT COALESCE(NULLIF(n.country,''),'?'), ', ')
+		     FROM service_nodes sn JOIN nodes n ON n.id = sn.node_id
+		     WHERE sn.service_id = sv.id AND n.role = 'egress') AS egress,
 		  (SELECT success FROM health_samples h WHERE h.service_id = sv.id ORDER BY observed_at DESC LIMIT 1) AS last_probe,
 		  (SELECT latency_ms FROM health_samples h WHERE h.service_id = sv.id ORDER BY observed_at DESC LIMIT 1) AS latency_ms
 		FROM services sv
 		LEFT JOIN rule_sets rs ON rs.id = sv.rule_set_id
-		LEFT JOIN ingress_groups ig ON ig.id = sv.ingress_group_id
-		LEFT JOIN egress_groups eg ON eg.id = sv.egress_group_id
 		ORDER BY sv.name`)
 	if err != nil {
 		return err

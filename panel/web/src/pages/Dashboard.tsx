@@ -7,7 +7,7 @@ import { IconArrowIn, IconArrowOut, IconGrid, IconLayers } from "../icons";
 type NodeStat = { role: string; status: string; count: number; last_seen: string | null };
 type SvcStat = {
   id: string; name: string; slug: string; enabled: boolean; rules: number;
-  ingress_group: string | null; egress_group: string | null;
+  egress: string | null;
   last_probe: boolean | null; latency_ms: number | null;
 };
 type Alert = { level: string; code: string; message: string; hint: string; action?: string; href?: string };
@@ -243,7 +243,7 @@ function ServiceDigest({ items }: { items: SvcStat[] }) {
                     <div className="tiny dim mono">{s.slug}</div>
                   </td>
                   <td className="num">{s.rules}</td>
-                  <td className="tiny mono dim">{s.ingress_group ?? "—"} → {s.egress_group ?? "—"}</td>
+                  <td className="tiny mono dim">{s.egress ?? "—"}</td>
                   <td>
                     {s.last_probe === null ? <span className="badge">нет данных</span>
                       : s.last_probe ? <span className="badge ok">{s.latency_ms} мс</span>

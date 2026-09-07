@@ -2,31 +2,93 @@ import { useState } from "react";
 import { api, idemKey, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
 import { IconPlus, IconRefresh, IconTrash } from "../icons";
+import { countryName, flagOf } from "../countries";
 
 type Service = {
   id: string; name: string; slug: string; enabled: boolean; priority: number;
   dns_ttl: number; udp_mode: string; allowed_ports: number[];
-  rule_set_id: string | null; ingress_group_id: string | null; egress_group_id: string | null;
-  rule_set_name: string | null; ingress_group_name: string | null; egress_group_name: string | null;
+  rule_set_id: string | null; rule_set_name: string | null;
+  nodes: NodeRow[];
   rule_count: number | null; rule_set_hash: string | null;
   probe: Record<string, unknown>; probe_in_set: boolean; version: number;
   domains: string[];
 };
 type Named = { id: string; name: string };
+type NodeRow = { id: string; name: string; role: string; country: string; status: string };
+
+// Страны выходных нод в выборе. Больше одной — сервис нельзя сохранить: отказ
+// основной ноды увёл бы трафик в другую страну под тем же аккаунтом.
+function egressCountries(nodes: NodeRow[], ids: string[]): string[] {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const n = nodes.find((x) => x.id === id);
+    if (n?.role === "egress") seen.add(n.country || "");
+  }
+  return [...seen];
+}
+
+// Выбор нод сервиса. Порядок отметки — это порядок отказа: работает первая
+// живая, остальные ждут своей очереди.
+function NodePicker({ nodes, value, onChange }: {
+  nodes: NodeRow[]; value: string[]; onChange: (ids: string[]) => void;
+}) {
+  const toggle = (id: string) =>
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  const rankIn = (role: string, id: string) =>
+    value.filter((v) => nodes.find((n) => n.id === v)?.role === role).indexOf(id);
+
+  const section = (role: "ingress" | "egress", title: string, hint: string) => {
+    const rows = nodes.filter((n) => n.role === role);
+    return (
+      <Field label={title} hint={hint}>
+        {rows.length === 0
+          ? <div className="tiny dim">нод этой роли пока нет</div>
+          : rows.map((n) => {
+              const on = value.includes(n.id);
+              const r = on ? rankIn(role, n.id) : -1;
+              return (
+                <label key={n.id} className={`pick${on ? " on" : ""}`}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(n.id)} />
+                  <span className="flag">{flagOf(n.country)}</span>
+                  <span className="pick-name">{n.name}</span>
+                  <span className="tiny dim">{countryName(n.country) || "страна не указана"}</span>
+                  <span className="spacer" />
+                  {n.status !== "healthy" && <span className="tiny dim">{n.status}</span>}
+                  {on && <span className="badge">{r === 0 ? "основная" : `резерв ${r}`}</span>}
+                </label>
+              );
+            })}
+      </Field>
+    );
+  };
+
+  const countries = egressCountries(nodes, value);
+  return (
+    <>
+      {section("ingress", "Ноды входа", "Куда устройства отправляют запросы. Их адреса уходят в ответ DNS.")}
+      {section("egress", "Ноды выхода", "Через кого сервис выходит к сайту. Первая отмеченная — основная, остальные подхватят при её отказе.")}
+      {countries.length > 1 && (
+        <Notice kind="warn" title="Ноды выхода из разных стран">
+          Выбраны {countries.map((c) => countryName(c) || "без страны").join(" и ")}. При отказе основной ноды
+          трафик уйдёт в другую страну, и сайт увидит смену географии под тем же аккаунтом — так теряют аккаунты.
+          Оставьте ноды одной страны.
+        </Notice>
+      )}
+    </>
+  );
+}
 type CatalogItem = { slug: string; name: string; preset: string; probe_host: string; domains: number };
 
 export default function Services() {
   const list = useAsync<{ items: Service[] }>(() => api("/services"), []);
   const rules = useAsync<{ items: Named[] }>(() => api("/rule-sets"), []);
-  const ing = useAsync<{ items: { group: Named }[] }>(() => api("/ingress-groups"), []);
-  const egr = useAsync<{ items: { group: Named }[] }>(() => api("/egress-groups"), []);
+  const nodesReq = useAsync<{ items: NodeRow[] }>(() => api("/nodes"), []);
   const [editing, setEditing] = useState<Service | null>(null);
   const [wizard, setWizard] = useState(false);
   const [removing, setRemoving] = useState<Service | null>(null);
   const toast = useToast();
 
-  const ingress = (ing.data?.items ?? []).map((r) => r.group);
-  const egress = (egr.data?.items ?? []).map((r) => r.group);
+  const nodes = (nodesReq.data?.items ?? []).filter((n) => n.status !== "disabled");
 
   return (
     <>
@@ -37,9 +99,9 @@ export default function Services() {
       </div>
 
       <Notice kind="info" title="Сервис — это то, что вы включаете">
-        Соберите сервис в мастере: домены (списком, из каталога, с GitHub или по ссылке), точка входа и
-        точка выхода. Домены живут внутри сервиса; общие «Списки доменов» нужны, только если один список
-        переиспользуется несколькими сервисами.
+        Соберите сервис в мастере: домены (списком, из каталога, с GitHub или по ссылке) и ноды, через которые
+        он ходит. Ноды выбираются прямо здесь, групп больше нет: список нод выхода — это порядок отказа, и все
+        они должны быть из одной страны, иначе сайт увидит переезд аккаунта.
       </Notice>
 
       {list.error ? <ErrorState message={list.error} onRetry={list.reload} />
@@ -83,8 +145,8 @@ export default function Services() {
                           {s.rule_count ?? 0} доменов · {shortHash(s.rule_set_hash)}
                         </div>
                       </td>
-                      <td className="tiny mono dim">
-                        {s.ingress_group_name ?? "—"} → {s.egress_group_name ?? "—"}
+                      <td className="tiny">
+                        <RouteCell nodes={s.nodes ?? []} />
                       </td>
                       <td className="num small">{s.dns_ttl} с</td>
                       <td className="num tiny">{s.allowed_ports?.join(", ")}</td>
@@ -105,7 +167,7 @@ export default function Services() {
 
       {wizard && (
         <ServiceWizard
-          ingress={ingress} egress={egress}
+          nodes={nodes}
           onClose={() => setWizard(false)}
           onSaved={() => { setWizard(false); list.reload(); rules.reload(); }}
         />
@@ -114,7 +176,7 @@ export default function Services() {
       {editing && (
         <ServiceForm
           service={editing}
-          ingress={ingress} egress={egress}
+          nodes={nodes}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); list.reload(); }}
         />
@@ -136,6 +198,17 @@ export default function Services() {
   );
 }
 
+// Маршрут в списке сервисов: флаги и имена нод, а не имя группы — из имени
+// группы нельзя было понять, из какой страны увидят пользователя.
+function RouteCell({ nodes }: { nodes: NodeRow[] }) {
+  const part = (role: string) => nodes.filter((n) => n.role === role);
+  const line = (rows: NodeRow[]) =>
+    rows.length === 0 ? <span className="dim">—</span>
+      : rows.map((n) => <span key={n.id} className="mono" title={countryName(n.country)}>{flagOf(n.country)} {n.name}</span>)
+          .reduce((a, b) => <>{a}<span className="dim">, </span>{b}</>);
+  return <div className="route-cell">{line(part("ingress"))}<span className="dim"> → </span>{line(part("egress"))}</div>;
+}
+
 // ---------------------------------------------------------------------------
 // New service: a 4-step wizard that creates the domain list and the service
 // together via POST /services/wizard.
@@ -143,8 +216,8 @@ export default function Services() {
 
 type DomainMode = "manual" | "catalog" | "github" | "url";
 
-function ServiceWizard({ ingress, egress, onClose, onSaved }: {
-  ingress: Named[]; egress: Named[];
+function ServiceWizard({ nodes, onClose, onSaved }: {
+  nodes: NodeRow[];
   onClose: () => void; onSaved: () => void;
 }) {
   const catalog = useAsync<{ items: CatalogItem[] }>(() => api("/services/catalog"), []);
@@ -170,10 +243,12 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
     }
   };
 
-  const [ingressId, setIngressId] = useState(ingress[0]?.id ?? "");
-  const [egressId, setEgressId] = useState(egress[0]?.id ?? "");
-  // Nothing to choose when there's exactly one of each — collapse to a summary.
-  const [showRoute, setShowRoute] = useState(!(ingress.length === 1 && egress.length === 1));
+  // По умолчанию отмечаем всё, что есть по одной ноде на роль: типичный случай,
+  // и мастер не заставляет кликать очевидное.
+  const only = (role: string) => nodes.filter((n) => n.role === role);
+  const [nodeIds, setNodeIds] = useState<string[]>(
+    [...(only("ingress").length === 1 ? [only("ingress")[0].id] : []),
+     ...(only("egress").length === 1 ? [only("egress")[0].id] : [])]);
 
   const [ttl, setTtl] = useState(60);
   const [ports, setPorts] = useState("443");
@@ -187,17 +262,19 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
     (mode === "github" && repo.trim() !== "" && path.trim() !== "") ||
     (mode === "url" && url.trim() !== "");
 
+  const hasIngress = nodeIds.some((id) => nodes.find((n) => n.id === id)?.role === "ingress");
+  const hasEgress = nodeIds.some((id) => nodes.find((n) => n.id === id)?.role === "egress");
+  const mixedCountries = egressCountries(nodes, nodeIds).length > 1;
   const canNext = step === 1 ? name.trim() !== ""
     : step === 2 ? domainsChosen
-    : step === 3 ? !!ingressId && !!egressId
+    : step === 3 ? hasIngress && hasEgress && !mixedCountries
     : true;
 
   const submit = async () => {
     setBusy(true); setError("");
     const body: Record<string, unknown> = {
       name,
-      ingress_group_id: ingressId || null,
-      egress_group_id: egressId || null,
+      node_ids: nodeIds,
       dns_ttl: ttl,
       allowed_ports: ports.split(",").map((p) => Number(p.trim())).filter((n) => n > 0 && n < 65536),
       udp_mode: udp,
@@ -213,9 +290,7 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
     } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   };
 
-  const missingGroups = ingress.length === 0 || egress.length === 0;
-  const ingressName = ingress.find((g) => g.id === ingressId)?.name ?? "—";
-  const egressName = egress.find((g) => g.id === egressId)?.name ?? "—";
+  const missingNodes = only("ingress").length === 0 || only("egress").length === 0;
 
   return (
     <Modal title="Новый сервис" onClose={onClose} wide footer={
@@ -225,7 +300,7 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
         <button className="btn" onClick={onClose}>Отмена</button>
         {step < 4
           ? <button className="btn primary" disabled={!canNext} onClick={() => setStep(step + 1)}>Далее</button>
-          : <button className="btn primary" disabled={busy || !canNext || missingGroups} onClick={submit}>
+          : <button className="btn primary" disabled={busy || !canNext || missingNodes} onClick={submit}>
               {busy ? <span className="spin" /> : null}Создать сервис
             </button>}
       </>
@@ -295,32 +370,12 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
 
       {step === 3 && (
         <>
-          {missingGroups && (
-            <Notice kind="warn" title="Сначала создайте точки входа и выхода">
-              Сервису нужны хотя бы одна точка входа и одна точка выхода. Создайте их и вернитесь.
+          {missingNodes && (
+            <Notice kind="warn" title="Сначала заведите ноды">
+              Сервису нужны хотя бы одна нода входа и одна нода выхода. Заведите их на странице «Ноды» и вернитесь.
             </Notice>
           )}
-          {!showRoute && !missingGroups ? (
-            <Notice kind="info" title="Маршрут">
-              Через: <b>{ingressName}</b> → <b>{egressName}</b>{" "}
-              <button type="button" className="linklike" onClick={() => setShowRoute(true)}>изменить</button>
-            </Notice>
-          ) : (
-            <div className="grid g2">
-              <Field label="Точка входа" hint="Куда устройства отправляют запросы.">
-                <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
-                  <option value="">— не выбрана —</option>
-                  {ingress.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Точка выхода" hint="Через кого сервис выходит к сайту.">
-                <select className="select" value={egressId} onChange={(e) => setEgressId(e.target.value)}>
-                  <option value="">— не выбрана —</option>
-                  {egress.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </Field>
-            </div>
-          )}
+          <NodePicker nodes={nodes} value={nodeIds} onChange={setNodeIds} />
         </>
       )}
 
@@ -381,14 +436,13 @@ function Steps({ step, labels }: { step: number; labels: string[] }) {
 // Edit existing service (unchanged behaviour): direct field editing.
 // ---------------------------------------------------------------------------
 
-function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
-  service: Service; ingress: Named[]; egress: Named[];
+function ServiceForm({ service, nodes, onClose, onSaved }: {
+  service: Service; nodes: NodeRow[];
   onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName] = useState(service.name);
   const [domains, setDomains] = useState((service.domains ?? []).join("\n"));
-  const [ingressId, setIngressId] = useState(service.ingress_group_id ?? "");
-  const [egressId, setEgressId] = useState(service.egress_group_id ?? "");
+  const [nodeIds, setNodeIds] = useState<string[]>((service.nodes ?? []).map((n) => n.id));
   const [ttl, setTtl] = useState(service.dns_ttl);
   const [priority, setPriority] = useState(service.priority);
   const [ports, setPorts] = useState((service.allowed_ports ?? [443]).join(", "));
@@ -409,8 +463,7 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
     setBusy(true); setError("");
     const body: Record<string, unknown> = {
       name, description: "", enabled,
-      ingress_group_id: ingressId || null,
-      egress_group_id: egressId || null,
+      node_ids: nodeIds,
       allowed_ports: ports.split(",").map((p) => Number(p.trim())).filter((n) => n > 0 && n < 65536),
       udp_mode: udp, dns_ttl: ttl, priority,
       probe: probeHost ? { hostname: probeHost.trim(), port: 443 } : {},
@@ -427,7 +480,8 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
     <Modal title={`Сервис ${service.name}`} onClose={onClose} wide footer={
       <>
         <button className="btn" onClick={onClose}>Отмена</button>
-        <button className="btn primary" onClick={save} disabled={busy}>
+        <button className="btn primary" onClick={save}
+          disabled={busy || egressCountries(nodes, nodeIds).length > 1}>
           {busy ? <span className="spin" /> : null}Сохранить
         </button>
       </>
@@ -465,20 +519,7 @@ function ServiceForm({ service, ingress, egress, onClose, onSaved }: {
 
       {tab === "route" && (
         <>
-          <div className="grid g2">
-            <Field label="Точка входа" hint="Куда устройства отправляют запросы.">
-              <select className="select" value={ingressId} onChange={(e) => setIngressId(e.target.value)}>
-                <option value="">— не выбрана —</option>
-                {ingress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Точка выхода" hint="Через кого сервис выходит к сайту.">
-              <select className="select" value={egressId} onChange={(e) => setEgressId(e.target.value)}>
-                <option value="">— не выбрана —</option>
-                {egress.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </Field>
-          </div>
+          <NodePicker nodes={nodes} value={nodeIds} onChange={setNodeIds} />
           <Field label="Домен для проверки"
             hint="Панель подключается к точке входа с этим именем и проверяет, что сертификат принадлежит настоящему сервису. Не используйте адреса, требующие входа в аккаунт.">
             <input className="input mono" value={probeHost} onChange={(e) => setProbeHost(e.target.value)}
