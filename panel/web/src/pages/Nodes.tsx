@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ago, idemKey, timeTitle } from "../api";
+import { api, ago, idemKey, plural, timeTitle } from "../api";
 import {
   Card, Confirm, Copyable, ErrorState, Field, Modal, Notice, Segmented, Spinner,
   StatusBadge, errText, useAsync, usePoll, useToast,
@@ -146,7 +146,11 @@ export default function Nodes() {
                             )}
                           </td>
                           <td className="small dim" title={timeTitle(n.last_seen_at)}>{ago(n.last_seen_at)}</td>
-                          <td className="tiny mono dim">{n.services?.length ? n.services.join(", ") : "—"}</td>
+                          {/* Число, а не перечисление: нода обслуживает десятки сервисов,
+                              и список имён растягивал строку на пол-экрана. Имена — в подсказке. */}
+                          <td className="small dim" title={n.services?.join(", ")}>
+                            {n.services?.length ? plural(n.services.length, "сервис", "сервиса", "сервисов") : "—"}
+                          </td>
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
                             {n.role === "ingress" && (
