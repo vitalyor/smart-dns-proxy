@@ -123,3 +123,12 @@ export function plural(n: number, one: string, few: string, many: string): strin
 }
 
 export const shortHash = (h?: string | null) => (h ? h.slice(0, 12) : "—");
+
+// Ключ идемпотентности. Не через crypto.randomUUID: его нет в незащищённом
+// контексте — панель, открытая по http://<адрес> с телефона, падала на нём с
+// «crypto.randomUUID is not a function». getRandomValues есть везде.
+export function idemKey(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}

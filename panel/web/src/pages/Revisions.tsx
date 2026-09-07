@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, fmtTime, plural, shortHash, timeTitle } from "../api";
+import { api, fmtTime, idemKey, plural, shortHash, timeTitle } from "../api";
 import { Card, ErrorState, Modal, Notice, Spinner, Stat, errText, usePoll, useToast } from "../ui";
 import { IconLayers, IconPlay, IconRotate } from "../icons";
 
@@ -50,7 +50,7 @@ export default function Revisions() {
     try {
       const r = await api<any>("/revisions/compile", {
         method: "POST", body: { deploy, dry_run: false },
-        headers: { "Idempotency-Key": crypto.randomUUID() },
+        headers: { "Idempotency-Key": idemKey() },
       });
       toast({ kind: "ok", title: deploy ? "Конфигурация собрана и применяется" : "Конфигурация собрана",
         body: `Сервисов: ${r.summary.services}, правил: ${r.summary.total_rules}.` });
@@ -124,7 +124,7 @@ export default function Revisions() {
                             <button className="btn sm" onClick={async () => {
                               try {
                                 await api(`/revisions/${r.id}/deploy`, {
-                                  method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+                                  method: "POST", headers: { "Idempotency-Key": idemKey() } });
                                 toast({ kind: "ok", title: `Применение конфигурации #${r.sequence} начато` });
                                 list.reload();
                               } catch (e) { toast({ kind: "bad", title: "Применение отклонено", body: errText(e) }); }
@@ -134,7 +134,7 @@ export default function Revisions() {
                             <button className="btn sm ghost danger" onClick={async () => {
                               try {
                                 const v = await api<{ target_revision_id: string }>(`/revisions/${r.id}/rollback`, {
-                                  method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+                                  method: "POST", headers: { "Idempotency-Key": idemKey() } });
                                 toast({ kind: "warn", title: "Откат запущен", body: `Целевая конфигурация: ${shortHash(v.target_revision_id)}` });
                                 list.reload();
                               } catch (e) { toast({ kind: "bad", title: "Откат невозможен", body: errText(e) }); }
