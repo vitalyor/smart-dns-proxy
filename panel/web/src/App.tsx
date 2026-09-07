@@ -137,23 +137,6 @@ export default function App() {
         )}
         </div>
 
-        <div className="rail-foot">
-          <div className="small" style={{ fontWeight: 550 }}>{me.user.email}</div>
-          <div className="tiny dim" style={{ marginBottom: 10 }}>роль: {me.user.role} · v{me.version}</div>
-          <div className="seg wide tone-neutral" role="group" aria-label="Тема оформления"
-            style={{ marginBottom: 8 }}>
-            {THEMES.map((t) => (
-              <button key={t.key} className={`seg-btn${theme === t.key ? " sel" : ""}`}
-                onClick={() => setTheme(t.key)} title={t.label} aria-label={t.label}
-                aria-pressed={theme === t.key}>
-                <t.Icon />
-              </button>
-            ))}
-          </div>
-          <button className="btn sm ghost" style={{ width: "100%" }} onClick={signOut}>
-            <IconLogout />Выйти
-          </button>
-        </div>
       </nav>
 
       <main className="main">
@@ -167,6 +150,22 @@ export default function App() {
               лабораторный режим
             </span>
           )}
+
+          <div className="acct">
+            <div className="seg tone-neutral" role="group" aria-label="Тема оформления">
+              {THEMES.map((t) => (
+                <button key={t.key} className={`seg-btn${theme === t.key ? " sel" : ""}`}
+                  onClick={() => setTheme(t.key)} title={t.label} aria-label={t.label}
+                  aria-pressed={theme === t.key}>
+                  <t.Icon />
+                </button>
+              ))}
+            </div>
+            <span className="acct-who" title={`роль: ${me.user.role} · v${me.version}`}>{me.user.email}</span>
+            <button className="btn sm ghost icon" onClick={signOut} title="Выйти" aria-label="Выйти">
+              <IconLogout />
+            </button>
+          </div>
         </header>
 
         <div className="page">
