@@ -24,15 +24,21 @@ import (
 // DNS can answer perfectly while unblocking is silently broken because the
 // tunnel to egress is down.
 func (a *Agent) probe(h *model.Health) {
+	// Эти два сигнала не зависят от конфигурации, и считать их надо ДО выхода
+	// по её отсутствию: у только что заведённой ноды конфигурации ещё нет, а
+	// адрес и срок сертификата панель должна видеть сразу — иначе в списке нод
+	// у свежей ноды пустой IP и «0 дней» до первого выката.
+	//
+	// Управляющий сертификат есть у ноды любой роли: без него панель до неё не
+	// достучится. Раньше его считала только точка входа, и у точки выхода
+	// всегда горело «0 дней» — тревога на пустом месте.
+	h.CertDaysLeft = certDaysLeft(a.cfg.certPath())
+	h.ObservedIPv4 = observedIPv4()
+
 	cfg, err := a.ActiveConfig()
 	if err != nil {
 		return
 	}
-	// Управляющий сертификат есть у ноды любой роли: без него панель до неё не
-	// достучится. Раньше его считала только точка входа, и у точки выхода в
-	// панели всегда горело «0 дней» — тревога на пустом месте.
-	h.CertDaysLeft = certDaysLeft(a.cfg.certPath())
-	h.ObservedIPv4 = observedIPv4()
 
 	switch cfg.Role {
 	case "ingress":
