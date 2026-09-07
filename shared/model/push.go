@@ -102,6 +102,12 @@ type Health struct {
 	ResolverCertFP       string `json:"resolver_cert_fp,omitempty"`
 	ResolverCertDaysLeft int    `json:"resolver_cert_days_left,omitempty"`
 
+	// ObservedIPv4 — адрес, который нода видит у себя на исходящем сокете.
+	// Источник истины про «какой у сервера адрес» — сам сервер, а не наш резолв
+	// имени: имя может быть за прокси или переехать. Пусто, если адрес частный
+	// (нода за NAT) — тогда врать нечем.
+	ObservedIPv4 string `json:"observed_ipv4,omitempty"`
+
 	// AccessHash is the digest of the DoH token set the node currently holds.
 	// The panel compares it with its own on every poll and re-pushes on drift,
 	// so the two converge without a separate tracking mechanism.
