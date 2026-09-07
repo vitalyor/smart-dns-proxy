@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"smartdns/shared/model"
@@ -175,22 +176,68 @@ func certDaysLeft(path string) int {
 	return int(time.Until(earliest).Hours() / 24)
 }
 
-// observedIPv4 returns the address the kernel picks for outbound traffic. No
-// packet is sent: connecting a UDP socket only fixes a route. A private result
-// means the node is behind NAT and cannot know its public address, so we say
-// nothing rather than report something misleading.
+// observedIPv4 сообщает, какой адрес у ноды снаружи.
+//
+// Сначала смотрим на исходящий сокет: подключение UDP только фиксирует маршрут,
+// пакет не уходит. На сервере с адресом прямо на интерфейсе этого достаточно.
+// Но агент обычно живёт в контейнере на docker-мосту и видит там 172.x — тогда
+// спрашиваем внешний отражатель. Ответ держим час: heartbeat уходит каждые
+// несколько секунд, дёргать чужой сервис так часто незачем.
+var (
+	ipMu   sync.Mutex
+	ipVal  string
+	ipWhen time.Time
+)
+
 func observedIPv4() string {
+	if ip := localOutboundIPv4(); ip != "" {
+		return ip
+	}
+	ipMu.Lock()
+	defer ipMu.Unlock()
+	if ipVal != "" && time.Since(ipWhen) < time.Hour {
+		return ipVal
+	}
+	if ip := reflectedIPv4(); ip != "" {
+		ipVal, ipWhen = ip, time.Now()
+	} else if ipVal != "" {
+		// Отражатель недоступен — лучше повторить прежний ответ, чем стереть
+		// адрес в панели из-за одной неудачной попытки.
+		ipWhen = time.Now().Add(-55 * time.Minute)
+	}
+	return ipVal
+}
+
+func localOutboundIPv4() string {
 	c, err := net.Dial("udp4", "192.0.2.1:9")
 	if err != nil {
 		return ""
 	}
 	defer c.Close()
 	a, ok := c.LocalAddr().(*net.UDPAddr)
-	if !ok || a.IP == nil {
-		return ""
-	}
-	if a.IP.IsPrivate() || a.IP.IsLoopback() || a.IP.IsLinkLocalUnicast() {
+	if !ok || a.IP == nil || a.IP.IsPrivate() || a.IP.IsLoopback() || a.IP.IsLinkLocalUnicast() {
 		return ""
 	}
 	return a.IP.String()
+}
+
+// reflectedIPv4 спрашивает адрес у внешнего отражателя. Два независимых, чтобы
+// падение одного не оставляло панель без данных; ответ принимаем, только если
+// это разумный публичный IPv4.
+func reflectedIPv4() string {
+	cl := &http.Client{Timeout: 4 * time.Second}
+	for _, u := range []string{"https://api.ipify.org", "https://ifconfig.me/ip"} {
+		resp, err := cl.Get(u)
+		if err != nil {
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+		resp.Body.Close()
+		ip := net.ParseIP(strings.TrimSpace(string(b)))
+		if ip == nil || ip.To4() == nil || ip.IsPrivate() || ip.IsLoopback() {
+			continue
+		}
+		return ip.String()
+	}
+	return ""
 }
