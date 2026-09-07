@@ -104,6 +104,7 @@ func main() {
 		StateDir:       *stateDir,
 		DatabaseURL:    *dsn,
 		GitHubRepo:     os.Getenv("GITHUB_REPO"),
+		InstallRef:     os.Getenv("INSTALL_REF"),
 	}
 	srv := api.New(db, cfg, web.Handler())
 	if err := srv.SeedSettings(ctx); err != nil {

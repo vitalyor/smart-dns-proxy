@@ -51,6 +51,11 @@ type Config struct {
 	// GitHubRepo ("owner/name") is the public repo the one-line node install
 	// command fetches install.sh and the role's compose from. Empty → default.
 	GitHubRepo string
+	// InstallRef — ветка или тег, откуда установщик берёт скрипты и compose.
+	// Пусто → main. Нужно, когда рабочий код ещё живёт в ветке: иначе панель
+	// раздаёт команду, которая тянет с main версию образа, уже удалённую из
+	// реестра, и новая нода падает на «not found».
+	InstallRef string
 }
 
 // Server wires the API together.

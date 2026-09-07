@@ -30,13 +30,20 @@ const defaultRepo = "vitalyor/smart-dns-proxy"
 // closes inherited file descriptors, so the process-substitution /dev/fd path
 // breaks under sudo. Command substitution passes the script as a string and has
 // no such problem. The `--` becomes $0; the flags start at $1.
-func installCommand(repo, role string) string {
+func installCommand(repo, ref, role string) string {
 	if repo == "" {
 		repo = defaultRepo
 	}
-	return fmt.Sprintf(
-		`sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh)" -- --role %s`,
-		repo, role)
+	if ref == "" {
+		ref = "main"
+	}
+	cmd := fmt.Sprintf(
+		`sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/%s/%s/install.sh)" -- --role %s`,
+		repo, ref, role)
+	if ref != "main" {
+		cmd += " --ref " + ref
+	}
+	return cmd
 }
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
@@ -442,7 +449,7 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 			"mgmt_address":     mgmt,
 			"bundle":           bundle.Encode(), // shown once
 			"cert_fingerprint": fp,
-			"install_command":  installCommand(s.Cfg.GitHubRepo, req.Role),
+			"install_command":  installCommand(s.Cfg.GitHubRepo, s.Cfg.InstallRef, req.Role),
 		}, nil
 	})
 }
