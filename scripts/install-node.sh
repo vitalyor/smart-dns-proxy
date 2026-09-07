@@ -8,6 +8,7 @@
 set -euo pipefail
 
 ROLE=""; BUNDLE=""; PANEL_IP=""; DIR=/opt/smartdns-node
+SMARTDNS_VERSION="${SMARTDNS_VERSION:-0.4.0}"
 MGMT_PORT=3333; RELAY_PORT=8443; DOH_PORT=8443
 ASSUME_YES=0
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -81,11 +82,17 @@ if [[ $ASSUME_YES -eq 0 ]]; then
 fi
 
 mkdir -p "$DIR"
-if [[ ! -f "$DIR/docker-compose.yml" ]]; then
-  [[ -f "$SRC/node/deploy/$ROLE/docker-compose.yml" ]] || die "не найден compose роли $ROLE в $SRC/node/deploy/$ROLE"
-  cp "$SRC/node/deploy/$ROLE/docker-compose.yml" "$DIR/docker-compose.yml"
-  ok "compose роли $ROLE установлен в $DIR (образы тянутся из реестра — сборка на сервере не нужна)"
+# Compose — генерируемый файл, а не настройка оператора: обновляем всегда.
+# Раньше он ставился только при отсутствии, и повторная установка молча
+# оставляла старый — с версией образа, которой в реестре уже нет.
+[[ -f "$SRC/node/deploy/$ROLE/docker-compose.yml" ]] || die "не найден compose роли $ROLE в $SRC/node/deploy/$ROLE"
+if [[ -f "$DIR/docker-compose.yml" ]] \
+   && ! cmp -s "$SRC/node/deploy/$ROLE/docker-compose.yml" "$DIR/docker-compose.yml"; then
+  cp "$DIR/docker-compose.yml" "$DIR/docker-compose.yml.bak-$(date +%Y%m%d-%H%M%S)"
+  info "прежний compose сохранён рядом как .bak-*"
 fi
+cp "$SRC/node/deploy/$ROLE/docker-compose.yml" "$DIR/docker-compose.yml"
+ok "compose роли $ROLE установлен в $DIR (образы тянутся из реестра — сборка на сервере не нужна)"
 
 # Ingress хранит здесь сертификаты, выпущенные из панели. Контейнер работает
 # под uid 10001, поэтому смонтированный каталог должен быть ему доступен на
@@ -100,7 +107,7 @@ NODE_BUNDLE=$BUNDLE
 MGMT_BIND=$MGMT_PORT
 RELAY_PORT=$RELAY_PORT
 DOH_PORT=$DOH_PORT
-SMARTDNS_VERSION=0.4.0
+SMARTDNS_VERSION=${SMARTDNS_VERSION}
 LOG_LEVEL=
 LOG_MAX_SIZE=10m
 LOG_MAX_FILE=3
@@ -110,6 +117,16 @@ chmod 600 "$DIR/.env"
 
 info "Загрузка образов из реестра и запуск"
 cd "$DIR"
+# Проверяем тег до запуска: без этого compose видит «образа нет», решает, что
+# его надо собрать, и падает уже на попытке сборки — из сообщения непонятно,
+# что виноват отсутствующий тег.
+IMAGE="ghcr.io/${GHCR_OWNER:-vitalyor}/smartdns-node:${SMARTDNS_VERSION}"
+if ! docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+  die "образа $IMAGE нет в реестре.
+  Это значит, что установщик взят из ветки, где версия уже другая.
+  Посмотрите доступные теги: https://github.com/${GITHUB_REPO:-vitalyor/smart-dns-proxy}/pkgs/container/smartdns-node
+  и запустите с нужной веткой: --ref <ветка>, либо задайте SMARTDNS_VERSION=<тег>."
+fi
 docker compose --env-file .env up -d --pull always
 
 info "Ожидание, пока агент начнёт слушать порт управления"
