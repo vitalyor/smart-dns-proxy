@@ -53,6 +53,10 @@ services:
       # Public repo ("owner/name") the one-line node install command points at.
       # Empty → built-in default (vitalyor/smart-dns-proxy).
       GITHUB_REPO: ${GITHUB_REPO:-}
+      # Ветка, из которой ставятся ноды. Пусто → main. Задавайте, пока рабочий
+      # код живёт в ветке: иначе панель выдаст команду, тянущую с main версию,
+      # которой в реестре уже нет.
+      INSTALL_REF: ${INSTALL_REF:-}
     volumes:
       - panelstate:/var/lib/smartdns-panel
     ports:

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -413,7 +414,7 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 		// address the panel might dial by; a bare-IP dial is pinned separately.
 		certPEM, keyPEM, err := pki.Issue(caCert, caKey, pki.CSRRequest{
 			CommonName: name, Role: req.Role,
-			DNSNames: []string{name, "localhost"},
+			DNSNames: dnsSANs(name, dialHost),
 			IPs:      nonEmptyIPs(req.PublicIPv4, req.PublicIPv6, hostOf(mgmt)),
 			TTL:      397 * 24 * time.Hour,
 		})
@@ -452,6 +453,29 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 			"install_command":  installCommand(s.Cfg.GitHubRepo, s.Cfg.InstallRef, req.Role),
 		}, nil
 	})
+}
+
+// dnsSANs собирает имена для сертификата. В SAN допустимы только ASCII-имена:
+// человеческое имя ноды вроде «Питер» роняло выпуск сертификата с невнятной
+// внутренней ошибкой, поэтому в SAN попадает только то, что похоже на хост.
+func dnsSANs(vals ...string) []string {
+	out := []string{"localhost"}
+	seen := map[string]bool{"localhost": true}
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] || !validHostname(v) {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
+
+func validHostname(s string) bool {
+	return len(s) <= 253 && hostnameRe.MatchString(s)
 }
 
 func nonEmptyIPs(vals ...string) []string {
