@@ -45,9 +45,7 @@ type ServiceInput struct {
 	Entries       []domainset.Entry
 	RuleSetHash   string
 	IngressNodes  []string // node IDs, already filtered to eligible members
-	IngressMode   string
 	EgressMembers []EgressMember
-	EgressMode    string
 	Policy        model.EgressPolicy
 }
 
@@ -163,7 +161,10 @@ func Compile(in Input) (*Output, error) {
 		sort.Strings(v6)
 
 		policy := s.Policy
-		policy.Mode = orDefault(s.EgressMode, "primary_fallback")
+		// Режим ровно один: первая живая нода по порядку. Раздача по весам
+		// перетасовывала ноды на каждое соединение и разносила один аккаунт по
+		// нескольким странам — ради этого режимы и убраны.
+		policy.Mode = "primary_fallback"
 		policy.Targets = nil
 		for _, m := range s.EgressMembers {
 			n, ok := nodes[m.NodeID]

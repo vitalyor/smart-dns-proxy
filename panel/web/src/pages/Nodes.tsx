@@ -16,7 +16,7 @@ type Node = {
   last_seen_at: string | null; last_error: string; country: string;
   observed_ipv4: string | null;
   desired_sequence: number | null; applied_sequence: number | null;
-  groups: string[]; cert_days_left: number | null; version: number;
+  services: string[]; cert_days_left: number | null; version: number;
 };
 
 export default function Nodes() {
@@ -96,7 +96,7 @@ export default function Nodes() {
                     <thead>
                       <tr>
                         <th>Нода</th><th>Статус</th><th>Адреса</th>
-                        <th>Конфигурация</th><th>Heartbeat</th><th>Группы</th><th />
+                        <th>Конфигурация</th><th>Heartbeat</th><th>Сервисы</th><th />
                       </tr>
                     </thead>
                     <tbody>
@@ -146,7 +146,7 @@ export default function Nodes() {
                             )}
                           </td>
                           <td className="small dim" title={timeTitle(n.last_seen_at)}>{ago(n.last_seen_at)}</td>
-                          <td className="tiny mono dim">{n.groups?.length ? n.groups.join(", ") : "—"}</td>
+                          <td className="tiny mono dim">{n.services?.length ? n.services.join(", ") : "—"}</td>
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
                             {n.role === "ingress" && (

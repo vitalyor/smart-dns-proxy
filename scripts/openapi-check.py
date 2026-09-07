@@ -12,16 +12,7 @@ import sys
 SPEC = "docs/openapi.json"
 ROUTES = "panel/internal/api/routes.go"
 
-# Группы регистрируются в цикле по ingress/egress, буквального шаблона в коде нет.
-DYNAMIC = {
-    "/{role}-groups": ["/ingress-groups", "/egress-groups"],
-    "/{role}-groups/{id}": ["/ingress-groups/{id}", "/egress-groups/{id}"],
-    "/{role}-groups/{id}/members": ["/ingress-groups/{id}/members", "/egress-groups/{id}/members"],
-    "/{role}-groups/{id}/members/{node_id}": [
-        "/ingress-groups/{id}/members/{node_id}",
-        "/egress-groups/{id}/members/{node_id}",
-    ],
-}
+DYNAMIC: dict[str, list[str]] = {}
 
 
 def norm(p: str) -> str:

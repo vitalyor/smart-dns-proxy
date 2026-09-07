@@ -9,6 +9,7 @@ import (
 	"smartdns/panel/internal/compiler"
 	"smartdns/panel/internal/store"
 	"smartdns/shared/model"
+	"strings"
 )
 
 func (s *Server) listRevisions(w http.ResponseWriter, r *http.Request) error {
@@ -125,17 +126,12 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 	}
 	type svcRow struct {
 		store.Service
-		IngressMode     *string `db:"ingress_mode"`
-		EgressMode      *string `db:"egress_mode"`
 		ActiveVersionID *string `db:"active_version_id"`
 		RuleSetHash     *string `db:"rule_set_hash"`
 	}
 	svcs, err := store.Many[svcRow](ctx, s.DB, `
-		SELECT sv.*, ig.mode AS ingress_mode, eg.mode AS egress_mode,
-		       rs.active_version_id, rv.content_hash AS rule_set_hash
+		SELECT sv.*, rs.active_version_id, rv.content_hash AS rule_set_hash
 		FROM services sv
-		LEFT JOIN ingress_groups ig ON ig.id = sv.ingress_group_id
-		LEFT JOIN egress_groups eg ON eg.id = sv.egress_group_id
 		LEFT JOIN rule_sets rs ON rs.id = sv.rule_set_id
 		LEFT JOIN rule_set_versions rv ON rv.id = rs.active_version_id
 		WHERE sv.enabled ORDER BY sv.slug`)
@@ -182,19 +178,21 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 		if err != nil {
 			return nil, "", err
 		}
-		ingressNodes, err := memberIDs(ctx, s.DB, "ingress_group_members", sv.IngressGroupID)
+		ingressNodes, egMembers, countries, err := serviceNodes(ctx, s.DB, sv.ID)
 		if err != nil {
 			return nil, "", err
 		}
 		if len(ingressNodes) == 0 {
-			return nil, "", fmt.Errorf("у сервиса %q не выбрана точка входа или она пуста", sv.Name)
-		}
-		egMembers, err := egressMembers(ctx, s.DB, sv.EgressGroupID)
-		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("у сервиса %q не выбрано ни одной ноды входа", sv.Name)
 		}
 		if len(egMembers) == 0 {
-			return nil, "", fmt.Errorf("у сервиса %q не выбрана точка выхода или она пуста", sv.Name)
+			return nil, "", fmt.Errorf("у сервиса %q не выбрано ни одной ноды выхода", sv.Name)
+		}
+		// Последняя проверка перед выкатом: страну ноды могли поменять уже
+		// после того, как список сервиса был собран.
+		if len(countries) > 1 {
+			return nil, "", fmt.Errorf("у сервиса %q ноды выхода из разных стран (%s) — отказ основной ноды увёл бы трафик в другую страну под тем же аккаунтом",
+				sv.Name, strings.Join(countries, ", "))
 		}
 		ports := make([]int, 0, len(sv.AllowedPorts))
 		for _, p := range sv.AllowedPorts {
@@ -204,8 +202,7 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 			ID: sv.ID, Slug: sv.Slug, Name: sv.Name, Priority: sv.Priority,
 			TTL: uint32(sv.DNSTTL), AllowedPorts: ports, UDPMode: sv.UDPMode,
 			Entries: entries, RuleSetHash: deref(sv.RuleSetHash),
-			IngressNodes: ingressNodes, IngressMode: deref(sv.IngressMode),
-			EgressMembers: egMembers, EgressMode: deref(sv.EgressMode),
+			IngressNodes: ingressNodes, EgressMembers: egMembers,
 		})
 	}
 
@@ -277,46 +274,42 @@ func (s *Server) dnsConfig(ctx context.Context) model.DNSConfig {
 	return c
 }
 
-func memberIDs(ctx context.Context, db *store.DB, table string, groupID *string) ([]string, error) {
-	if groupID == nil {
-		return nil, nil
-	}
-	type row struct {
-		NodeID string `db:"node_id"`
-	}
-	rows, err := store.Many[row](ctx, db,
-		fmt.Sprintf(`SELECT m.node_id::text FROM %s m JOIN nodes n ON n.id=m.node_id
-			WHERE m.group_id=$1 AND m.enabled ORDER BY m.priority, n.name`, table), *groupID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.NodeID)
-	}
-	return out, nil
-}
-
-func egressMembers(ctx context.Context, db *store.DB, groupID *string) ([]compiler.EgressMember, error) {
-	if groupID == nil {
-		return nil, nil
-	}
+// serviceNodes возвращает ноды сервиса: входные — просто идентификаторами,
+// выходные — с приоритетом, и отдельно список стран выходных нод. Порядок в
+// списке и есть порядок отказа: первая живая нода и работает.
+func serviceNodes(ctx context.Context, db *store.DB, serviceID string) (ingress []string, egress []compiler.EgressMember, countries []string, err error) {
 	type row struct {
 		NodeID   string `db:"node_id"`
+		Role     string `db:"role"`
+		Country  string `db:"country"`
 		Priority int    `db:"priority"`
-		Weight   int    `db:"weight"`
 	}
 	rows, err := store.Many[row](ctx, db, `
-		SELECT m.node_id::text, m.priority, m.weight FROM egress_group_members m
-		JOIN nodes n ON n.id=m.node_id WHERE m.group_id=$1 AND m.enabled ORDER BY m.priority`, *groupID)
+		SELECT sn.node_id::text, n.role, COALESCE(n.country,'') AS country, sn.priority
+		FROM service_nodes sn JOIN nodes n ON n.id = sn.node_id
+		WHERE sn.service_id = $1 ORDER BY sn.priority, n.name`, serviceID)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	out := make([]compiler.EgressMember, 0, len(rows))
+	seen := map[string]bool{}
 	for _, r := range rows {
-		out = append(out, compiler.EgressMember{NodeID: r.NodeID, Priority: r.Priority, Weight: r.Weight})
+		switch r.Role {
+		case "ingress":
+			ingress = append(ingress, r.NodeID)
+		case "egress":
+			// Вес больше не задаётся: раздачи по весам нет, есть только порядок.
+			egress = append(egress, compiler.EgressMember{NodeID: r.NodeID, Priority: r.Priority, Weight: 1})
+			label := r.Country
+			if label == "" {
+				label = "страна не указана"
+			}
+			if !seen[label] {
+				seen[label] = true
+				countries = append(countries, label)
+			}
+		}
 	}
-	return out, nil
+	return ingress, egress, countries, nil
 }
 
 // --- rollout -----------------------------------------------------------------

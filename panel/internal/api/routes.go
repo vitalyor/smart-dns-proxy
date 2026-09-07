@@ -43,18 +43,6 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /nodes", s.wrap("nodes.create", v("operator", s.createNode)))
 	api.HandleFunc("GET /nodes/resolve", s.wrap("nodes.resolve", v("operator", s.resolveHost)))
 
-	// --- groups ---
-	for _, k := range []groupKind{ingressKind, egressKind} {
-		k := k
-		base := "/" + k.role + "-groups"
-		api.HandleFunc("GET "+base, s.wrap(k.role+"groups.list", v("viewer", s.listGroups(k))))
-		api.HandleFunc("POST "+base, s.wrap(k.role+"groups.create", v("operator", s.createGroup(k))))
-		api.HandleFunc("PATCH "+base+"/{id}", s.wrap(k.role+"groups.patch", v("operator", s.patchGroup(k))))
-		api.HandleFunc("DELETE "+base+"/{id}", s.wrap(k.role+"groups.delete", v("operator", s.deleteGroup(k))))
-		api.HandleFunc("POST "+base+"/{id}/members", s.wrap(k.role+"groups.member.add", v("operator", s.addMember(k))))
-		api.HandleFunc("DELETE "+base+"/{id}/members/{node_id}", s.wrap(k.role+"groups.member.remove", v("operator", s.removeMember(k))))
-	}
-
 	// --- services ---
 	api.HandleFunc("GET /services", s.wrap("services.list", v("viewer", s.listServices)))
 	api.HandleFunc("GET /services/catalog", s.wrap("services.catalog", v("viewer", s.serviceCatalog)))

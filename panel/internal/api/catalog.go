@@ -50,10 +50,10 @@ func countDomains(body string) int {
 }
 
 type wizardRequest struct {
-	Name           string  `json:"name"`
-	Slug           string  `json:"slug"`
-	IngressGroupID *string `json:"ingress_group_id"`
-	EgressGroupID  *string `json:"egress_group_id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+	// Ноды сервиса в порядке предпочтения — те же, что в карточке сервиса.
+	NodeIDs []string `json:"node_ids"`
 	// Domain sources (any combination). Manual lines go straight into the
 	// rule set's manual_include; the rest become fetched sources.
 	Domains []string `json:"domains"`
@@ -177,11 +177,20 @@ func (s *Server) serviceWizard(w http.ResponseWriter, r *http.Request) error {
 		probe = map[string]any{"hostname": h, "port": 443}
 	}
 
+	if err := s.checkServiceNodes(ctx, req.NodeIDs); err != nil {
+		return fail(err)
+	}
 	sv, err := store.One[store.Service](ctx, s.DB, `
-		INSERT INTO services (name, slug, description, enabled, rule_set_id, ingress_group_id,
-			egress_group_id, allowed_ports, udp_mode, dns_ttl, priority, notes, probe)
-		VALUES ($1,$2,'',true,$3,$4,$5,$6,$7,$8,$9,'',$10) RETURNING *`,
-		req.Name, slug, rs.ID, req.IngressGroupID, req.EgressGroupID, ports, udp, ttl, priority, probe)
+		WITH s AS (
+			INSERT INTO services (name, slug, description, enabled, rule_set_id,
+				allowed_ports, udp_mode, dns_ttl, priority, notes, probe)
+			VALUES ($1,$2,'',true,$3,$4,$5,$6,$7,'',$8) RETURNING *
+		), n AS (
+			INSERT INTO service_nodes (service_id, node_id, priority)
+			SELECT s.id, x.node_id, x.ord FROM s, unnest($9::uuid[]) WITH ORDINALITY AS x(node_id, ord)
+		)
+		SELECT * FROM s`,
+		req.Name, slug, rs.ID, ports, udp, ttl, priority, probe, req.NodeIDs)
 	if err != nil {
 		return fail(err)
 	}

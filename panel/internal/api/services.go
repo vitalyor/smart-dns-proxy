@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"smartdns/panel/internal/rules"
@@ -16,10 +17,10 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 	type row struct {
 		store.Service
 		RuleSetName *string `db:"rule_set_name" json:"rule_set_name"`
-		IngressName *string `db:"ingress_group_name" json:"ingress_group_name"`
-		EgressName  *string `db:"egress_group_name" json:"egress_group_name"`
-		RuleCount   *int    `db:"rule_count" json:"rule_count"`
-		RuleSetHash *string `db:"rule_set_hash" json:"rule_set_hash"`
+		// Ноды сервиса в том порядке, в котором их пробует точка входа.
+		Nodes       []svcNode `db:"nodes" json:"nodes"`
+		RuleCount   *int      `db:"rule_count" json:"rule_count"`
+		RuleSetHash *string   `db:"rule_set_hash" json:"rule_set_hash"`
 		// True when a probe hostname is set but is not among the service's managed
 		// domains — such a probe hits the SNI proxy as "unmanaged" and always fails.
 		ProbeInSet bool `db:"probe_in_set" json:"probe_in_set"`
@@ -28,7 +29,13 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 		Domains []string `db:"domains" json:"domains"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
-		SELECT sv.*, rs.name AS rule_set_name, ig.name AS ingress_group_name, eg.name AS egress_group_name,
+		SELECT sv.*, rs.name AS rule_set_name,
+		       COALESCE((SELECT jsonb_agg(jsonb_build_object(
+		           'id', n.id, 'name', n.name, 'role', n.role,
+		           'country', COALESCE(n.country,''), 'status', n.status)
+		         ORDER BY sn.priority, n.name)
+		         FROM service_nodes sn JOIN nodes n ON n.id = sn.node_id
+		         WHERE sn.service_id = sv.id), '[]'::jsonb) AS nodes,
 		       (SELECT count(*)::int FROM rule_entries re WHERE re.version_id = rs.active_version_id) AS rule_count,
 		       rsv.content_hash AS rule_set_hash,
 		       COALESCE(rs.manual_include, '{}') AS domains,
@@ -38,8 +45,6 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 		FROM services sv
 		LEFT JOIN rule_sets rs ON rs.id = sv.rule_set_id
 		LEFT JOIN rule_set_versions rsv ON rsv.id = rs.active_version_id
-		LEFT JOIN ingress_groups ig ON ig.id = sv.ingress_group_id
-		LEFT JOIN egress_groups eg ON eg.id = sv.egress_group_id
 		ORDER BY sv.name`)
 	if err != nil {
 		return err
@@ -49,19 +54,95 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 }
 
 type serviceRequest struct {
-	Name           string         `json:"name"`
-	Slug           string         `json:"slug"`
-	Description    string         `json:"description"`
-	Enabled        *bool          `json:"enabled"`
-	RuleSetID      *string        `json:"rule_set_id"`
-	IngressGroupID *string        `json:"ingress_group_id"`
-	EgressGroupID  *string        `json:"egress_group_id"`
-	AllowedPorts   []int32        `json:"allowed_ports"`
-	UDPMode        string         `json:"udp_mode"`
-	DNSTTL         int            `json:"dns_ttl"`
-	Priority       int            `json:"priority"`
-	Notes          string         `json:"notes"`
-	Probe          map[string]any `json:"probe"`
+	Name         string         `json:"name"`
+	Slug         string         `json:"slug"`
+	Description  string         `json:"description"`
+	Enabled      *bool          `json:"enabled"`
+	RuleSetID    *string        `json:"rule_set_id"`
+	AllowedPorts []int32        `json:"allowed_ports"`
+	UDPMode      string         `json:"udp_mode"`
+	DNSTTL       int            `json:"dns_ttl"`
+	Priority     int            `json:"priority"`
+	Notes        string         `json:"notes"`
+	Probe        map[string]any `json:"probe"`
+	// NodeIDs — ноды сервиса в порядке предпочтения: первая живая и берётся.
+	// Групп больше нет, список принадлежит сервису.
+	NodeIDs []string `json:"node_ids"`
+}
+
+// svcNode — нода сервиса в ответе API.
+type svcNode struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+	Country string `json:"country"`
+	Status  string `json:"status"`
+}
+
+// checkServiceNodes не пускает в один сервис выходные ноды разных стран.
+//
+// Ради этого всё и затевалось: список — это порядок отказа, и если в нём рядом
+// Германия и Испания, то падение первой ноды молча меняет страну под живым
+// аккаунтом. Сайт видит переезд, и claim прилетает не нам, а владельцу
+// аккаунта. Пусть лучше сервис ждёт и горит тревогой.
+func (s *Server) checkServiceNodes(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	type row struct {
+		Role    string `db:"role"`
+		Country string `db:"country"`
+		Name    string `db:"name"`
+	}
+	rows, err := store.Many[row](ctx, s.DB,
+		`SELECT role, COALESCE(country,'') AS country, name FROM nodes WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return err
+	}
+	if len(rows) != len(ids) {
+		return badRequest("в списке нод сервиса есть несуществующая нода")
+	}
+	byCountry := map[string][]string{}
+	for _, r := range rows {
+		if r.Role == "egress" {
+			byCountry[r.Country] = append(byCountry[r.Country], r.Name)
+		}
+	}
+	if len(byCountry) > 1 {
+		var parts []string
+		for c, names := range byCountry {
+			label := c
+			if label == "" {
+				label = "страна не указана"
+			}
+			parts = append(parts, label+": "+strings.Join(names, ", "))
+		}
+		sort.Strings(parts)
+		return badRequest("ноды выхода одного сервиса должны быть из одной страны, а выбраны разные — %s. "+
+			"Иначе отказ основной ноды переносит трафик в другую страну, и сайт видит смену географии под тем же аккаунтом",
+			strings.Join(parts, "; "))
+	}
+	return nil
+}
+
+// setServiceNodes заменяет список нод сервиса целиком.
+//
+// Одним оператором, чтобы сбой на середине не оставил сервис без нод. Но не
+// «удалить всё и вставить заново»: части одного оператора работают на общем
+// снимке данных, и вставка не видит только что удалённых строк — уникальный
+// ключ срабатывает на них же. Поэтому вставка с обновлением приоритета, а
+// удаление — только тех, кого в новом списке нет.
+func (s *Server) setServiceNodes(ctx context.Context, serviceID string, ids []string) error {
+	_, err := s.DB.Exec(ctx, `
+		WITH ins AS (
+			INSERT INTO service_nodes (service_id, node_id, priority)
+			SELECT $1, x.node_id, x.ord FROM unnest($2::uuid[]) WITH ORDINALITY AS x(node_id, ord)
+			ON CONFLICT (service_id, node_id) DO UPDATE SET priority = EXCLUDED.priority
+			RETURNING node_id
+		)
+		DELETE FROM service_nodes WHERE service_id=$1 AND node_id <> ALL($2::uuid[])`,
+		serviceID, ids)
+	return err
 }
 
 // checkUDPMode accepts only what the data plane actually implements. proxy и
@@ -117,12 +198,23 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	if err := s.checkServiceNodes(r.Context(), req.NodeIDs); err != nil {
+		return err
+	}
+	// Сервис и его ноды создаются одним запросом: сервис без нод не собирается
+	// в ревизию, и оставлять такой огрызок после половины операции незачем.
 	sv, err := store.One[store.Service](r.Context(), s.DB, `
-		INSERT INTO services (name, slug, description, enabled, rule_set_id, ingress_group_id,
-			egress_group_id, allowed_ports, udp_mode, dns_ttl, priority, notes, probe)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-		req.Name, req.Slug, req.Description, enabled, req.RuleSetID, req.IngressGroupID,
-		req.EgressGroupID, req.AllowedPorts, req.UDPMode, req.DNSTTL, req.Priority, req.Notes, req.Probe)
+		WITH s AS (
+			INSERT INTO services (name, slug, description, enabled, rule_set_id,
+				allowed_ports, udp_mode, dns_ttl, priority, notes, probe)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *
+		), n AS (
+			INSERT INTO service_nodes (service_id, node_id, priority)
+			SELECT s.id, x.node_id, x.ord FROM s, unnest($12::uuid[]) WITH ORDINALITY AS x(node_id, ord)
+		)
+		SELECT * FROM s`,
+		req.Name, req.Slug, req.Description, enabled, req.RuleSetID,
+		req.AllowedPorts, req.UDPMode, req.DNSTTL, req.Priority, req.Notes, req.Probe, req.NodeIDs)
 	if err != nil {
 		return err
 	}
@@ -133,18 +225,19 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		Name           *string        `json:"name"`
-		Description    *string        `json:"description"`
-		Enabled        *bool          `json:"enabled"`
-		RuleSetID      *string        `json:"rule_set_id"`
-		IngressGroupID *string        `json:"ingress_group_id"`
-		EgressGroupID  *string        `json:"egress_group_id"`
-		AllowedPorts   []int32        `json:"allowed_ports"`
-		UDPMode        *string        `json:"udp_mode"`
-		DNSTTL         *int           `json:"dns_ttl"`
-		Priority       *int           `json:"priority"`
-		Notes          *string        `json:"notes"`
-		Probe          map[string]any `json:"probe"`
+		Name         *string        `json:"name"`
+		Description  *string        `json:"description"`
+		Enabled      *bool          `json:"enabled"`
+		RuleSetID    *string        `json:"rule_set_id"`
+		AllowedPorts []int32        `json:"allowed_ports"`
+		UDPMode      *string        `json:"udp_mode"`
+		DNSTTL       *int           `json:"dns_ttl"`
+		Priority     *int           `json:"priority"`
+		Notes        *string        `json:"notes"`
+		Probe        map[string]any `json:"probe"`
+		// Указатель, а не срез: отсутствие поля — «не трогать список»,
+		// пустой список — «убрать все ноды».
+		NodeIDs *[]string `json:"node_ids"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		return err
@@ -154,6 +247,11 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err := checkUDPMode(req.UDPMode); err != nil {
 		return err
+	}
+	if req.NodeIDs != nil {
+		if err := s.checkServiceNodes(r.Context(), *req.NodeIDs); err != nil {
+			return err
+		}
 	}
 	ver, err := ifMatch(r)
 	if err != nil {
@@ -167,19 +265,23 @@ func (s *Server) patchService(w http.ResponseWriter, r *http.Request) error {
 	n, err := s.DB.ExecN(r.Context(), `
 		UPDATE services SET
 			name=COALESCE($3,name), description=COALESCE($4,description), enabled=COALESCE($5,enabled),
-			rule_set_id=COALESCE($6,rule_set_id), ingress_group_id=COALESCE($7,ingress_group_id),
-			egress_group_id=COALESCE($8,egress_group_id), allowed_ports=COALESCE($9,allowed_ports),
-			udp_mode=COALESCE($10,udp_mode), dns_ttl=COALESCE($11,dns_ttl), priority=COALESCE($12,priority),
-			notes=COALESCE($13,notes), probe=COALESCE($14,probe),
+			rule_set_id=COALESCE($6,rule_set_id), allowed_ports=COALESCE($7,allowed_ports),
+			udp_mode=COALESCE($8,udp_mode), dns_ttl=COALESCE($9,dns_ttl), priority=COALESCE($10,priority),
+			notes=COALESCE($11,notes), probe=COALESCE($12,probe),
 			updated_at=now(), version=version+1
 		WHERE id=$1 AND ($2 = 0 OR version = $2)`,
-		id, ver, req.Name, req.Description, req.Enabled, req.RuleSetID, req.IngressGroupID,
-		req.EgressGroupID, req.AllowedPorts, req.UDPMode, req.DNSTTL, req.Priority, req.Notes, req.Probe)
+		id, ver, req.Name, req.Description, req.Enabled, req.RuleSetID,
+		req.AllowedPorts, req.UDPMode, req.DNSTTL, req.Priority, req.Notes, req.Probe)
 	if err != nil {
 		return err
 	}
 	if err := checkVersion(n, ver); err != nil {
 		return err
+	}
+	if req.NodeIDs != nil {
+		if err := s.setServiceNodes(r.Context(), id, *req.NodeIDs); err != nil {
+			return err
+		}
 	}
 	after, _ := store.One[store.Service](r.Context(), s.DB, `SELECT * FROM services WHERE id=$1`, id)
 	s.audit(r.Context(), r, "service.updated", "service", id, before, after)

@@ -5,7 +5,6 @@ import { Spinner, useToast } from "./ui";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Nodes from "./pages/Nodes";
-import { GroupsPage } from "./pages/Groups";
 import Services from "./pages/Services";
 import RuleSets from "./pages/RuleSets";
 import RuleSetDetail from "./pages/RuleSetDetail";
@@ -19,7 +18,7 @@ import Audit from "./pages/Audit";
 import Settings from "./pages/Settings";
 import Setup from "./pages/Setup";
 import {
-  IconGauge, IconServer, IconArrowIn, IconGrid, IconList, IconGlobe,
+  IconGauge, IconServer, IconGrid, IconList, IconGlobe,
   IconLayers, IconPhone, IconPulse, IconShield, IconSliders, IconLogout,
   IconMoon, IconSun, IconPlay, IconMenu, IconDesktop,
 } from "./icons";
@@ -46,7 +45,6 @@ const NAV = [
   { to: "/setup", label: "Быстрый старт", Icon: IconPlay },
   { group: "Инфраструктура" },
   { to: "/nodes", label: "Ноды", Icon: IconServer },
-  { to: "/groups", label: "Точки входа и выхода", Icon: IconArrowIn },
   { group: "Конфигурация" },
   { to: "/services", label: "Сервисы", Icon: IconGrid },
   // Общие списки живут внутри сервиса; страница /rule-sets остаётся доступной по
@@ -173,9 +171,10 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/nodes" element={<Nodes />} />
-            <Route path="/groups" element={<GroupsPage />} />
-            <Route path="/ingress-groups" element={<Navigate to="/groups" replace />} />
-            <Route path="/egress-groups" element={<Navigate to="/groups" replace />} />
+            {/* Групп больше нет: ноды выбираются в самом сервисе. */}
+            <Route path="/groups" element={<Navigate to="/services" replace />} />
+            <Route path="/ingress-groups" element={<Navigate to="/services" replace />} />
+            <Route path="/egress-groups" element={<Navigate to="/services" replace />} />
             <Route path="/services" element={<Services />} />
             <Route path="/rule-sets" element={<RuleSets />} />
             <Route path="/rule-sets/:id" element={<RuleSetDetail />} />
