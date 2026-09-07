@@ -6,13 +6,15 @@ import {
 } from "../ui";
 
 type Role = "ingress" | "egress";
-import { IconPlus, IconRefresh, IconTrash } from "../icons";
+import { IconPlus, IconRefresh, IconShield, IconSliders, IconTrash } from "../icons";
+import { COUNTRIES, countryName, flagOf } from "../countries";
 
 type Node = {
   id: string; name: string; role: string; status: string;
   public_ipv4: string | null; public_ipv6: string | null;
   relay_endpoint: string | null; mgmt_address: string; agent_version: string;
-  last_seen_at: string | null; last_error: string;
+  last_seen_at: string | null; last_error: string; country: string;
+  observed_ipv4: string | null;
   desired_sequence: number | null; applied_sequence: number | null;
   groups: string[]; cert_days_left: number | null; version: number;
 };
@@ -86,10 +88,10 @@ export default function Nodes() {
                 <div className="table-wrap">
                   <table className="table fixed">
                     <colgroup>
-                      <col style={{ width: "18%" }} /><col style={{ width: "11%" }} />
-                      <col style={{ width: "22%" }} /><col style={{ width: "11%" }} />
-                      <col style={{ width: "11%" }} /><col style={{ width: "9%" }} />
-                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "17%" }} /><col style={{ width: "14%" }} />
+                      <col style={{ width: "19%" }} /><col style={{ width: "9%" }} />
+                      <col style={{ width: "10%" }} /><col style={{ width: "8%" }} />
+                      <col style={{ width: "23%" }} />
                     </colgroup>
                     <thead>
                       <tr>
@@ -103,13 +105,20 @@ export default function Nodes() {
                           <td>
                             <div className="row" style={{ gap: 8 }}>
                               <span className={`node-dot ${meta.cls}`} aria-hidden="true" />
+                              {n.country && (
+                                <span className="flag" title={countryName(n.country)}
+                                  aria-label={countryName(n.country)}>{flagOf(n.country)}</span>
+                              )}
                               <div style={{ fontWeight: 550 }}>{n.name}</div>
                             </div>
-                            <div className="tiny dim mono" style={{ marginLeft: 16 }}>агент {n.agent_version || "—"}</div>
+                            <div className="tiny dim" style={{ marginLeft: 16 }}>
+                              {n.country ? `${countryName(n.country)} · ` : ""}
+                              <span className="mono">агент {n.agent_version || "—"}</span>
+                            </div>
                           </td>
                           <td>
                             <StatusBadge status={n.status} />
-                            {n.cert_days_left != null && (
+                            {n.cert_days_left != null && n.cert_days_left > 0 && (
                               <div className={`tiny${n.cert_days_left < 14 ? "" : " dim"}`}
                                 style={{ marginTop: 4, color: n.cert_days_left < 14 ? "var(--warn)" : undefined }}
                                 title="Срок сертификата идентичности ноды">
@@ -120,6 +129,12 @@ export default function Nodes() {
                           </td>
                           <td className="mono tiny">
                             <div>{n.public_ipv4 ?? "— IPv4"}</div>
+                            {n.observed_ipv4 && n.public_ipv4 && n.observed_ipv4 !== n.public_ipv4 && (
+                              <div style={{ color: "var(--warn)" }}
+                                title="Нода сообщает о себе другой адрес. В DNS пока уходит записанный: молча подменить боевую A-запись панель не станет. Проверьте, не переехал ли сервер.">
+                                нода видит {n.observed_ipv4}
+                              </div>
+                            )}
                             <div className="dim">{n.public_ipv6 ?? "— IPv6"}</div>
                             {n.relay_endpoint && <div className="dim">relay {n.relay_endpoint}</div>}
                             <div className="dim">mgmt {n.mgmt_address || "—"}</div>
@@ -135,9 +150,16 @@ export default function Nodes() {
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
                             {n.role === "ingress" && (
-                              <button className="btn sm ghost" onClick={() => setCertNode(n)}>Сертификат</button>
+                              <button className="btn sm ghost icon" title="Сертификат резолвера"
+                                aria-label={`Сертификат ноды ${n.name}`}
+                                onClick={() => setCertNode(n)}><IconShield /></button>
                             )}
-                            <button className="btn sm ghost" onClick={async () => {
+                            <button className="btn sm ghost icon"
+                              title={n.status === "maintenance" ? "Вернуть в работу" : "Перевести в обслуживание"}
+                              aria-label={n.status === "maintenance"
+                                ? `Вернуть в работу ноду ${n.name}`
+                                : `Перевести в обслуживание ноду ${n.name}`}
+                              onClick={async () => {
                               try {
                                 await api(`/nodes/${n.id}/maintenance`, {
                                   method: "POST", body: { enabled: n.status !== "maintenance" },
@@ -145,10 +167,9 @@ export default function Nodes() {
                                 toast({ kind: "ok", title: n.status === "maintenance" ? "Обслуживание снято" : "Нода в обслуживании" });
                                 nodes.reload();
                               } catch (e) { toast({ kind: "bad", title: "Не удалось изменить режим", body: errText(e) }); }
-                            }}>
-                              {n.status === "maintenance" ? "Вернуть в работу" : "Обслуживание"}
-                            </button>
-                            <button className="btn sm ghost danger" aria-label={`Удалить ${n.name}`}
+                            }}><IconSliders /></button>
+                            <button className="btn sm ghost icon danger" title="Удалить ноду"
+                              aria-label={`Удалить ${n.name}`}
                               onClick={() => setRemoving(n)}><IconTrash /></button>
                           </td>
                         </tr>
@@ -372,10 +393,15 @@ function CreateNode({ initialRole, onClose, onCreated }: {
 }) {
   const [role, setRole] = useState<Role>(initialRole);
   const [name, setName] = useState("");
-  const [mgmtHost, setMgmtHost] = useState("");
+  const [host, setHost] = useState("");
   const [mgmtPort, setMgmtPort] = useState(3333);
   const [ipv4, setIpv4] = useState("");
+  const [found, setFound] = useState<string[]>([]);
+  const [manualIP, setManualIP] = useState(false);
+  const [looking, setLooking] = useState(false);
+  const [lookErr, setLookErr] = useState("");
   const [relayPort, setRelayPort] = useState(8443);
+  const [country, setCountry] = useState(initialRole === "ingress" ? "RU" : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -387,8 +413,9 @@ function CreateNode({ initialRole, onClose, onCreated }: {
           setBusy(true); setError("");
           try {
             const body: Record<string, unknown> = {
-              role, name, public_ipv4: ipv4,
-              mgmt_address: mgmtHost.trim() ? `${mgmtHost.trim()}:${mgmtPort}` : "",
+              role, name, country, host: host.trim(),
+              public_ipv4: manualIP ? ipv4 : "",
+              mgmt_address: host.trim() ? `${host.trim()}:${mgmtPort}` : "",
             };
             if (role === "egress") body.relay_port = relayPort;
             const v = await api<{ name: string; role: string; install_command: string; bundle: string }>(
@@ -400,7 +427,8 @@ function CreateNode({ initialRole, onClose, onCreated }: {
       </>
     }>
       <Field label="Роль ноды">
-        <Segmented<Role> value={role} onChange={setRole} wide tone={role === "ingress" ? "direct" : "managed"} options={[
+        <Segmented<Role> value={role} wide tone={role === "ingress" ? "direct" : "managed"}
+          onChange={(r) => { setRole(r); setCountry(r === "ingress" ? "RU" : ""); }} options={[
           { value: "ingress", label: "Точка входа", hint: "Принимает DNS и HTTPS от устройств. Сервер в России." },
           { value: "egress", label: "Точка выхода", hint: "Выходит к сайтам за рубежом. Её IP видит конечный сервис." },
         ]} />
@@ -409,20 +437,65 @@ function CreateNode({ initialRole, onClose, onCreated }: {
         <input className="input mono" placeholder={role === "ingress" ? "ingress-msk-01" : "egress-ams-01"} value={name}
           onChange={(e) => setName(e.target.value)} />
       </Field>
+      <Field label="Страна"
+        hint={role === "ingress"
+          ? "Где стоит сервер. Точка входа должна быть в России."
+          : "Её видят сайты. От страны зависит, какой регион вам покажут."}>
+        <CountrySelect value={country} onChange={setCountry} />
+      </Field>
       <div className="hostport">
-        <Field label="Адрес управления" hint="Хост или IP, куда панель подключается к агенту.">
-          <input className="input mono" placeholder="203.0.113.5" value={mgmtHost}
-            onChange={(e) => setMgmtHost(e.target.value)} />
+        <Field label="Адрес сервера" hint="Имя или IP. Имя лучше: переживёт смену адреса.">
+          <input className="input mono" placeholder="1c.est.example.net" value={host}
+            onChange={(e) => { setHost(e.target.value); setFound([]); setIpv4(""); setLookErr(""); }}
+            onBlur={async () => {
+              const h = host.trim();
+              if (!h) return;
+              setLooking(true); setLookErr("");
+              try {
+                const r = await api<{ ipv4: string[] }>(`/nodes/resolve?host=${encodeURIComponent(h)}`);
+                setFound(r.ipv4); setIpv4(r.ipv4[0] ?? "");
+              } catch (e) { setLookErr(errText(e)); setFound([]); setIpv4(""); }
+              finally { setLooking(false); }
+            }} />
         </Field>
-        <Field label="Порт" hint="По умолч. 3333.">
+        <Field label="Порт управления" hint="По умолч. 3333.">
           <input className="input num" type="number" value={mgmtPort}
             onChange={(e) => setMgmtPort(Number(e.target.value))} />
         </Field>
       </div>
-      <Field label="Публичный IPv4" hint={role === "ingress" ? "Этот адрес DNS выдаёт устройствам для управляемых доменов." : "На нём слушает туннель; входные ноды подключаются сюда."}>
-        <input className="input mono" placeholder="203.0.113.5" value={ipv4}
-          onChange={(e) => setIpv4(e.target.value)} />
-      </Field>
+      {looking && <div className="small dim">проверяю имя…</div>}
+      {!manualIP ? (
+        <div className="small dim">
+          Публичный IPv4 нода сообщит сама, как только поднимется.{" "}
+          <button type="button" className="linklike" onClick={() => setManualIP(true)}>
+            Указать вручную
+          </button>
+          {" "}— если сервер за NAT или адрес нужно задать иначе.
+        </div>
+      ) : (
+        <>
+          <Field label="Публичный IPv4"
+            hint={role === "ingress"
+              ? "Этот адрес DNS выдаёт устройствам. Пусто — значит возьмём со слов ноды."
+              : "Пусто — значит возьмём со слов ноды."}
+            error={lookErr || undefined}>
+            {found.length > 1 ? (
+              <select className="select mono" value={ipv4} onChange={(e) => setIpv4(e.target.value)}>
+                {found.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            ) : (
+              <input className="input mono" placeholder="203.0.113.5" value={ipv4}
+                onChange={(e) => setIpv4(e.target.value)} />
+            )}
+          </Field>
+          {found.length > 1 && (
+            <div className="small dim" style={{ marginTop: -8 }}>
+              У имени {found.length} адреса — выберите тот, что принадлежит серверу.
+              Несколько адресов часто означают прокси перед ним.
+            </div>
+          )}
+        </>
+      )}
       {role === "egress" && (
         <Field label="Порт туннеля" hint="Куда входные ноды подключаются по защищённому каналу.">
           <input className="input num" type="number" value={relayPort}
@@ -444,6 +517,7 @@ function EditNode({ node, onClose, onSaved }: { node: Node; onClose: () => void;
   const [mgmtHost, setMgmtHost] = useState(mgmtParts.host);
   const [mgmtPort, setMgmtPort] = useState(mgmtParts.port);
   const [name, setName] = useState(node.name);
+  const [country, setCountry] = useState(node.country ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -458,7 +532,7 @@ function EditNode({ node, onClose, onSaved }: { node: Node; onClose: () => void;
               method: "PATCH",
               headers: { "If-Match": String(node.version) },
               body: {
-                name, public_ipv4: v4 || null, public_ipv6: v6 || null,
+                name, country, public_ipv4: v4 || null, public_ipv6: v6 || null,
                 mgmt_address: mgmtHost.trim() ? `${mgmtHost.trim()}:${mgmtPort}` : null,
                 relay_endpoint: relayHost.trim() ? `${relayHost.trim()}:${relayPort}` : null,
               },
@@ -469,6 +543,9 @@ function EditNode({ node, onClose, onSaved }: { node: Node; onClose: () => void;
       </>
     }>
       <Field label="Имя"><input className="input mono" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Страна" hint="Показывается флагом в списке нод и в группах.">
+        <CountrySelect value={country} onChange={setCountry} />
+      </Field>
       <div className="hostport">
         <Field label="Адрес управления" hint="Хост или IP агента.">
           <input className="input mono" value={mgmtHost} onChange={(e) => setMgmtHost(e.target.value)} placeholder="203.0.113.5" />
@@ -506,4 +583,20 @@ function splitHostPort(s: string, defPort: number): { host: string; port: number
   if (i < 0) return { host: s, port: defPort };
   const p = Number(s.slice(i + 1));
   return { host: s.slice(0, i), port: p > 0 ? p : defPort };
+}
+
+// CountrySelect — выбор страны списком с флагом. Флаг рисует система из кода
+// страны, поэтому ни картинок, ни шрифта грузить не нужно.
+function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="row" style={{ gap: 10 }}>
+      <span className="flag lg" aria-hidden="true">{flagOf(value) || "🏳️"}</span>
+      <select className="select" value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }}>
+        <option value="">не указана</option>
+        {COUNTRIES.map((c) => (
+          <option key={c.code} value={c.code}>{flagOf(c.code)} {c.name}</option>
+        ))}
+      </select>
+    </div>
+  );
 }
