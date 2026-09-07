@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, shortHash } from "../api";
+import { api, idemKey, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
 import { IconPlus, IconRefresh, IconTrash } from "../icons";
 
@@ -208,7 +208,7 @@ function ServiceWizard({ ingress, egress, onClose, onSaved }: {
     if (mode === "github") { body.repo = repo.trim(); body.path = path.trim(); body.ref = ref.trim() || "main"; }
     if (mode === "url") body.url = url.trim();
     try {
-      await api("/services/wizard", { method: "POST", body, headers: { "Idempotency-Key": crypto.randomUUID() } });
+      await api("/services/wizard", { method: "POST", body, headers: { "Idempotency-Key": idemKey() } });
       onSaved();
     } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   };
@@ -543,7 +543,7 @@ function SourcesSection({ serviceId }: { serviceId: string }) {
     setBusy(true);
     try {
       const r = await api<{ build: { unchanged: boolean; added: number; removed: number } }>(
-        `/services/${serviceId}/refresh`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+        `/services/${serviceId}/refresh`, { method: "POST", headers: { "Idempotency-Key": idemKey() } });
       toast({ kind: "ok", title: r.build.unchanged ? "Изменений нет" : "Домены обновлены",
         body: r.build.unchanged ? undefined : `Добавлено ${r.build.added}, удалено ${r.build.removed}. Соберите конфигурацию, чтобы применить.` });
       data.reload();

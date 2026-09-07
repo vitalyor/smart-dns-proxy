@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ago, plural, shortHash, timeTitle } from "../api";
+import { api, ago, idemKey, plural, shortHash, timeTitle } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Spinner, errText, useAsync, useToast } from "../ui";
 import { IconPlus, IconRefresh, IconTrash } from "../icons";
 
@@ -28,7 +28,7 @@ export default function RuleSets() {
     setBusyId(rs.id);
     try {
       const r = await api<{ status: string; added: number; removed: number; unchanged: boolean }>(
-        `/rule-sets/${rs.id}/fetch`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+        `/rule-sets/${rs.id}/fetch`, { method: "POST", headers: { "Idempotency-Key": idemKey() } });
       toast({
         kind: "ok",
         title: r.unchanged ? "Изменений нет" : r.status === "active" ? "Список обновлён" : "Кандидат ждёт подтверждения",
@@ -173,7 +173,7 @@ function CreateRuleSet({ presets, onClose, onCreated }: {
               });
             }
             await api(`/rule-sets/${rs.id}/fetch`, {
-              method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() },
+              method: "POST", headers: { "Idempotency-Key": idemKey() },
             }).catch(() => undefined);
             onCreated();
           } catch (e) { setError(errText(e)); } finally { setBusy(false); }

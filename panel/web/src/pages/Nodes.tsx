@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ago, timeTitle } from "../api";
+import { api, ago, idemKey, timeTitle } from "../api";
 import {
   Card, Confirm, Copyable, ErrorState, Field, Modal, Notice, Segmented, Spinner,
   StatusBadge, errText, useAsync, usePoll, useToast,
@@ -419,7 +419,7 @@ function CreateNode({ initialRole, onClose, onCreated }: {
             };
             if (role === "egress") body.relay_port = relayPort;
             const v = await api<{ name: string; role: string; install_command: string; bundle: string }>(
-              "/nodes", { method: "POST", body, headers: { "Idempotency-Key": crypto.randomUUID() } }
+              "/nodes", { method: "POST", body, headers: { "Idempotency-Key": idemKey() } }
             );
             onCreated(v);
           } catch (e) { setError(errText(e)); } finally { setBusy(false); }

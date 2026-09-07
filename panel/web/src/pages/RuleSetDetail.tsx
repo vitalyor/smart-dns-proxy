@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, fmtTime, shortHash, timeTitle } from "../api";
+import { api, fmtTime, idemKey, shortHash, timeTitle } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Spinner, errText, useAsync, useToast, Stat as UiStat } from "../ui";
 import { IconBack, IconCheck, IconClose, IconPlus, IconRefresh, IconTrash, IconList } from "../icons";
 
@@ -59,7 +59,7 @@ export default function RuleSetDetail() {
           setBusy(true);
           try {
             const r = await api<{ status: string; unchanged: boolean; added: number; removed: number }>(
-              `/rule-sets/${id}/fetch`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() } });
+              `/rule-sets/${id}/fetch`, { method: "POST", headers: { "Idempotency-Key": idemKey() } });
             toast({ kind: "ok", title: r.unchanged ? "Изменений нет" : `Кандидат готов: ${r.status}`,
               body: r.unchanged ? undefined : `Добавлено ${r.added}, удалено ${r.removed}.` });
             d.reload();
