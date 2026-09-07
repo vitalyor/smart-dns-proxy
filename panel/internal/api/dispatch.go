@@ -178,6 +178,21 @@ func (s *Server) pollOnce(ctx context.Context) {
 		_, _ = s.DB.Exec(ctx, `INSERT INTO health_samples (node_id, kind, success, latency_ms)
 			VALUES ($1,'poll',$2,0)`, n.ID, status == "healthy")
 
+		// Публичный адрес заполняем со слов самой ноды, но только пока он пуст.
+		// Нода — источник надёжнее резолва имени: она отвечает по mTLS
+		// сертификатом, который выдали мы. Расхождение с уже записанным адресом
+		// не трогаем: подменить боевую A-запись молча нельзя, это решение
+		// оператора — панель лишь показывает разницу.
+		if h.ObservedIPv4 != "" {
+			var filled bool
+			if err := s.DB.QueryRow(ctx, `UPDATE nodes SET public_ipv4=$2, updated_at=now()
+				WHERE id=$1 AND COALESCE(public_ipv4,'')='' RETURNING true`,
+				n.ID, h.ObservedIPv4).Scan(&filled); err == nil && filled {
+				s.event(ctx, "info", "nodes", "public_ip_learned",
+					fmt.Sprintf("Нода %s сообщила свой публичный адрес: %s", n.Name, h.ObservedIPv4), &n.ID, nil)
+			}
+		}
+
 		// Access travels on its own channel, so a device added on the public page
 		// converges here instead of forcing a configuration rollout.
 		if n.Role == "ingress" {
