@@ -27,11 +27,16 @@ func (a *Agent) probe(h *model.Health) {
 	if err != nil {
 		return
 	}
+	// Управляющий сертификат есть у ноды любой роли: без него панель до неё не
+	// достучится. Раньше его считала только точка входа, и у точки выхода в
+	// панели всегда горело «0 дней» — тревога на пустом месте.
+	h.CertDaysLeft = certDaysLeft(a.cfg.certPath())
+	h.ObservedIPv4 = observedIPv4()
+
 	switch cfg.Role {
 	case "ingress":
 		h.UpstreamOK = dialOK(cfg.DNS.Upstream, 1500*time.Millisecond)
 		h.EgressReachable = ingressCanReachEgress(cfg)
-		h.CertDaysLeft = certDaysLeft(a.cfg.certPath())
 		h.ResolverCertFP, h.ResolverCertDaysLeft = a.resolverCert()
 	case "egress":
 		// The relay's own resolver reachability stands in for resolve health.
@@ -168,4 +173,24 @@ func certDaysLeft(path string) int {
 		return -1
 	}
 	return int(time.Until(earliest).Hours() / 24)
+}
+
+// observedIPv4 returns the address the kernel picks for outbound traffic. No
+// packet is sent: connecting a UDP socket only fixes a route. A private result
+// means the node is behind NAT and cannot know its public address, so we say
+// nothing rather than report something misleading.
+func observedIPv4() string {
+	c, err := net.Dial("udp4", "192.0.2.1:9")
+	if err != nil {
+		return ""
+	}
+	defer c.Close()
+	a, ok := c.LocalAddr().(*net.UDPAddr)
+	if !ok || a.IP == nil {
+		return ""
+	}
+	if a.IP.IsPrivate() || a.IP.IsLoopback() || a.IP.IsLinkLocalUnicast() {
+		return ""
+	}
+	return a.IP.String()
 }
