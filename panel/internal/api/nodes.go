@@ -45,10 +45,12 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) error {
 		DesiredSeq   *int64   `db:"desired_sequence" json:"desired_sequence"`
 		Groups       []string `db:"groups" json:"groups"`
 		CertDaysLeft *int     `db:"cert_days_left" json:"cert_days_left"`
+		ObservedIPv4 *string  `db:"observed_ipv4" json:"observed_ipv4"`
 	}
 	rows, err := store.Many[row](r.Context(), s.DB, `
 		SELECT n.*, dr.sequence AS desired_sequence,
 		       NULLIF(n.health->>'cert_days_left','')::int AS cert_days_left,
+		       NULLIF(n.health->>'observed_ipv4','') AS observed_ipv4,
 		       COALESCE(
 		         (SELECT array_agg(g.name ORDER BY g.name) FROM ingress_group_members m
 		            JOIN ingress_groups g ON g.id = m.group_id WHERE m.node_id = n.id)
@@ -320,6 +322,11 @@ type createNodeRequest struct {
 	PublicIPv4  string `json:"public_ipv4"`
 	PublicIPv6  string `json:"public_ipv6"`
 	RelayPort   int    `json:"relay_port"`
+	Country     string `json:"country"`
+	// Host — имя сервера, если оператор ввёл имя, а не адрес. Управление и
+	// туннель тогда хранятся именем: оно переживает смену IP, а подлинность
+	// ноды всё равно проверяется по сертификату, а не по имени.
+	Host string `json:"host"`
 }
 
 // createNode registers a node and mints its provisioning bundle. Under the push
@@ -336,11 +343,18 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
+		name = strings.TrimSpace(req.Host)
+	}
+	if name == "" {
 		name = req.Role + "-" + auth.RandomToken(4)
 	}
+	dialHost := strings.TrimSpace(req.Host)
 	mgmt := strings.TrimSpace(req.MgmtAddress)
 	if mgmt == "" {
-		host := req.PublicIPv4
+		host := dialHost
+		if host == "" {
+			host = req.PublicIPv4
+		}
 		if host == "" {
 			host = req.PublicIPv6
 		}
@@ -356,7 +370,10 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 			if port == 0 {
 				port = 8443
 			}
-			host := req.PublicIPv4
+			host := dialHost
+			if host == "" {
+				host = req.PublicIPv4
+			}
 			if host == "" {
 				host = req.PublicIPv6
 			}
@@ -373,9 +390,10 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) error {
 
 		var nodeID string
 		err = tx.QueryRow(ctx, `
-			INSERT INTO nodes (name, role, mgmt_address, public_ipv4, public_ipv6, relay_endpoint, relay_sni, status)
-			VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$1,'unknown')
-			RETURNING id`, name, req.Role, mgmt, req.PublicIPv4, req.PublicIPv6, relayEndpoint).Scan(&nodeID)
+			INSERT INTO nodes (name, role, mgmt_address, public_ipv4, public_ipv6, relay_endpoint, relay_sni, country, status)
+			VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$1,$7,'unknown')
+			RETURNING id`, name, req.Role, mgmt, req.PublicIPv4, req.PublicIPv6, relayEndpoint,
+			strings.ToUpper(strings.TrimSpace(req.Country))).Scan(&nodeID)
 		if err != nil {
 			return 0, nil, fmt.Errorf("%w: имя ноды %q уже занято", store.ErrConflict, name)
 		}
@@ -455,4 +473,55 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// resolveHost turns the hostname an operator typed into addresses, so the form
+// can show what it found before anything is saved. It deliberately does not use
+// the host's resolver: the panel may run behind a split-tunnel VPN that answers
+// with placeholder addresses, and a placeholder silently written into a node's
+// public IPv4 would be published to every device as an A record.
+func (s *Server) resolveHost(w http.ResponseWriter, r *http.Request) error {
+	host := strings.TrimSpace(r.URL.Query().Get("host"))
+	if host == "" {
+		return badRequest("укажите host")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		out := map[string][]string{"ipv4": {}, "ipv6": {}}
+		if ip.To4() != nil {
+			out["ipv4"] = []string{ip.String()}
+		} else {
+			out["ipv6"] = []string{ip.String()}
+		}
+		writeJSON(w, http.StatusOK, out)
+		return nil
+	}
+	res := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 3 * time.Second}
+			// Два независимых публичных резолвера: если первый недоступен,
+			// ответ всё равно приходит не от системного.
+			c, err := d.DialContext(ctx, network, "1.1.1.1:53")
+			if err == nil {
+				return c, nil
+			}
+			return d.DialContext(ctx, network, "9.9.9.9:53")
+		},
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	addrs, err := res.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return errorf(http.StatusUnprocessableEntity, "resolve_failed", "имя %q не резолвится: %v", host, err)
+	}
+	v4, v6 := []string{}, []string{}
+	for _, a := range addrs {
+		if a4 := a.To4(); a4 != nil {
+			v4 = append(v4, a4.String())
+		} else {
+			v6 = append(v6, a.String())
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ipv4": v4, "ipv6": v6})
+	return nil
 }

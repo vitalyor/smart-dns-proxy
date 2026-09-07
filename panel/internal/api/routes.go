@@ -41,6 +41,7 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("POST /nodes/{id}/certificate", s.wrap("nodes.certificate", v("operator", s.nodeCertificate)))
 	api.HandleFunc("GET /nodes/{id}/dns-log", s.wrap("nodes.dnslog", v("viewer", s.nodeDNSLog)))
 	api.HandleFunc("POST /nodes", s.wrap("nodes.create", v("operator", s.createNode)))
+	api.HandleFunc("GET /nodes/resolve", s.wrap("nodes.resolve", v("operator", s.resolveHost)))
 
 	// --- groups ---
 	for _, k := range []groupKind{ingressKind, egressKind} {
