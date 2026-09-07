@@ -63,6 +63,28 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
 		WHERE desired_revision_id IS NOT NULL AND desired_revision_id IS DISTINCT FROM applied_revision_id`)
 	stale, _ := store.Value[int](ctx, s.DB,
 		`SELECT count(*)::int FROM nodes WHERE last_seen_at IS NULL OR last_seen_at < now() - interval '60 seconds'`)
+	// Состояние выката одной строкой: сколько нод уже на назначенной
+	// конфигурации и кто отстал. Раньше это можно было понять только косвенно,
+	// по счётчику расхождения без имён.
+	type deployNode struct {
+		Name    string `db:"name" json:"name"`
+		Role    string `db:"role" json:"role"`
+		Applied *int64 `db:"applied_sequence" json:"applied_sequence"`
+		Desired *int64 `db:"desired_sequence" json:"desired_sequence"`
+		Behind  bool   `db:"behind" json:"behind"`
+		Stale   bool   `db:"stale" json:"stale"`
+	}
+	deployNodes, _ := store.Many[deployNode](ctx, s.DB, `
+		SELECT n.name, n.role, ar.sequence AS applied_sequence, dr.sequence AS desired_sequence,
+		       (n.desired_revision_id IS NOT NULL
+		        AND n.desired_revision_id IS DISTINCT FROM n.applied_revision_id) AS behind,
+		       (n.last_seen_at IS NULL OR n.last_seen_at < now() - interval '60 seconds') AS stale
+		FROM nodes n
+		LEFT JOIN revisions ar ON ar.id = n.applied_revision_id
+		LEFT JOIN revisions dr ON dr.id = n.desired_revision_id
+		WHERE n.status <> 'disabled'
+		ORDER BY n.role, n.name`)
+
 	events, err := store.Many[store.Event](ctx, s.DB, `SELECT * FROM events ORDER BY created_at DESC LIMIT 20`)
 	if err != nil {
 		return err
@@ -75,6 +97,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
 		"pending_rule_approvals": pending,
 		"nodes_with_drift":       drift,
 		"nodes_stale":            stale,
+		"deploy_nodes":           deployNodes,
 		"events":                 events,
 		"alerts":                 s.alerts(ctx, drift, stale, pending),
 		"lab_mode":               s.Cfg.LabMode,
@@ -87,29 +110,48 @@ type alert struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Hint    string `json:"hint"`
+	// Action и Href — куда идти чинить. Тревога без ответа на вопрос «и что
+	// теперь делать» бесполезна: оператор читает её и остаётся на месте.
+	Action string `json:"action,omitempty"`
+	Href   string `json:"href,omitempty"`
 }
 
 func (s *Server) alerts(ctx contextT, drift, stale, pending int) []alert {
 	var out []alert
 	if stale > 0 {
+		names, _ := store.Value[string](ctx, s.DB, `SELECT COALESCE(string_agg(name, ', ' ORDER BY name),'')
+			FROM nodes WHERE last_seen_at IS NULL OR last_seen_at < now() - interval '60 seconds'`)
 		out = append(out, alert{"error", "heartbeat_stale",
-			fmt.Sprintf("%d нод не отправляли heartbeat более 60 секунд", stale),
-			"Data plane продолжает работать на last-known-good конфигурации. Проверьте связь агента с панелью."})
+			"Не отвечает " + listOf(names, stale, "нода", "ноды", "нод"),
+			"Трафик идёт по последней рабочей конфигурации, пользователи пока ничего не замечают. " +
+				"Проверьте, жив ли сервер и запущен ли на нём агент.",
+			"Открыть ноды", "/nodes"})
 	}
 	if drift > 0 {
+		names, _ := store.Value[string](ctx, s.DB, `SELECT COALESCE(string_agg(name, ', ' ORDER BY name),'')
+			FROM nodes WHERE desired_revision_id IS NOT NULL
+			  AND desired_revision_id IS DISTINCT FROM applied_revision_id`)
 		out = append(out, alert{"warn", "revision_drift",
-			fmt.Sprintf("%d нод ещё не применили назначенную конфигурацию", drift),
-			"Откройте раздел «Ревизии», чтобы посмотреть состояние выката."})
+			"Работает на старой конфигурации: " + listOf(names, drift, "нода", "ноды", "нод"),
+			"Панель досылает конфигурацию сама и обычно догоняет за минуту. " +
+				"Если не проходит — нода недоступна или отклоняет доставку.",
+			"Смотреть выкат", "/revisions"})
 	}
 	if pending > 0 {
+		names, _ := store.Value[string](ctx, s.DB, `SELECT COALESCE(string_agg(DISTINCT rs.name, ', '),'')
+			FROM rule_set_versions v JOIN rule_sets rs ON rs.id = v.rule_set_id
+			WHERE v.status = 'awaiting_approval'`)
 		out = append(out, alert{"info", "rules_awaiting_approval",
-			fmt.Sprintf("%d обновлений списков ждут подтверждения", pending),
-			"Изменение превысило порог безопасности и требует ручной проверки diff."})
+			"Ждут вашей проверки " + listOf(names, pending, "список доменов", "списка доменов", "списков доменов"),
+			"В них изменилась сразу большая часть доменов — больше трети, — и панель не стала применять " +
+				"такое молча. Пока вы не подтвердите, ноды работают по прежним спискам.",
+			"Посмотреть изменения", "/rule-sets"})
 	}
 	if s.Cfg.LabMode {
 		out = append(out, alert{"warn", "lab_mode",
-			"Включён лабораторный режим: egress может обращаться к приватным адресам",
-			"Отключите LAB_MODE перед выпуском в production."})
+			"Включён лабораторный режим",
+			"Точка выхода может обращаться к приватным адресам внутри сети. Это режим для стенда: " +
+				"перед боевой работой выключите LAB_MODE.", "", ""})
 	}
 	// Плановое обновление списка поднимает активную версию, но само на ноды
 	// ничего не выкатывает — и до сих пор об этом никто не сообщал. Список
@@ -125,8 +167,10 @@ func (s *Server) alerts(ctx contextT, drift, stale, pending int) []alert {
 			'epoch'::timestamptz)`)
 	if undeployed > 0 {
 		out = append(out, alert{"warn", "rules_not_deployed",
-			fmt.Sprintf("%d списков доменов обновились после последнего выката", undeployed),
-			"Ноды резолвят по старому списку. Соберите и выкатите конфигурацию, чтобы изменения доехали."})
+			fmt.Sprintf("Изменения в %s не доехали до нод", plural(undeployed, "списке", "списках", "списках")),
+			"Списки обновились уже после последнего выката, а ноды резолвят по прежним. " +
+				"Соберите конфигурацию — и изменения применятся без перезапуска.",
+			"Собрать и выкатить", "/revisions"})
 	}
 
 	staleRules, _ := store.Value[int](ctx, s.DB, `
@@ -135,8 +179,10 @@ func (s *Server) alerts(ctx contextT, drift, stale, pending int) []alert {
 		  AND (last_fetch_at IS NULL OR last_fetch_at < now() - (interval_sec * 2) * interval '1 second')`)
 	if staleRules > 0 {
 		out = append(out, alert{"warn", "rules_stale",
-			fmt.Sprintf("%d списков доменов не обновлялись дольше двух интервалов", staleRules),
-			"Проверьте доступность источников; активный список при этом не изменяется."})
+			fmt.Sprintf("Не удаётся обновить %s доменов", plural(staleRules, "список", "списка", "списков")),
+			"Источник не отвечает дольше двух интервалов обновления. На работу это пока не влияет: " +
+				"действует последняя успешно загруженная версия.",
+			"Открыть списки", "/rule-sets"})
 	}
 	if out == nil {
 		out = []alert{}
@@ -236,4 +282,25 @@ func clampInt(s string, def, lo, hi int) int {
 		return hi
 	}
 	return n
+}
+
+// plural подбирает русскую форму по числу: 1 нода, 2 ноды, 5 нод.
+func plural(n int, one, few, many string) string {
+	w := many
+	switch {
+	case n%10 == 1 && n%100 != 11:
+		w = one
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 12 || n%100 > 14):
+		w = few
+	}
+	return fmt.Sprintf("%d %s", n, w)
+}
+
+// listOf называет объекты поимённо, пока их немного: «нода usa» понятнее, чем
+// «1 нода». Когда их много, имена не помещаются и остаётся счёт.
+func listOf(names string, n int, one, few, many string) string {
+	if names == "" || n > 3 {
+		return plural(n, one, few, many)
+	}
+	return plural(n, one, few, many) + " — " + names
 }
