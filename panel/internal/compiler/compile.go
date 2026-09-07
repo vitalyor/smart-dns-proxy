@@ -250,9 +250,10 @@ func Compile(in Input) (*Output, error) {
 			eg.AllowPrivateDestinations = in.LabMode
 			cfg.Egress = eg
 			out.Summary.EgressNodes++
-			if len(entries) == 0 {
-				out.Warnings = append(out.Warnings, fmt.Sprintf("egress node %q has an empty allowlist and will refuse every destination", n.Name))
-			}
+			// Про ноду без сервисов не предупреждаем: это не ошибка сборки, а
+			// обычное состояние только что заведённой ноды, и три таких строки
+			// в каждой ревизии приучают не читать предупреждения вовсе.
+			// Какие ноды не задействованы, видно в списке нод.
 		default:
 			return nil, fmt.Errorf("node %q has unknown role %q", n.Name, n.Role)
 		}
