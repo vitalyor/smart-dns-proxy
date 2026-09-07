@@ -186,7 +186,9 @@ h3 { font-size: 15px; }
 .section-head .spacer { flex: 1; }
 .section-note { color: var(--text-3); font-size: 13.5px; }
 .mono { font-family: var(--mono); font-variant-ligatures: none; }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* Число с единицей — одно целое: «60 с», разорванное на две строки, читается
+   как две разные величины и втрое поднимает строку таблицы. */
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .muted { color: var(--text-2); }
 .dim { color: var(--text-3); }
 .small { font-size: 13.5px; }
