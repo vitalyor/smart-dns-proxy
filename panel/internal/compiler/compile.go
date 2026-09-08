@@ -365,6 +365,32 @@ func detectCountryClash(services []ServiceInput, nodes []NodeInput) error {
 		}
 	}
 
+	// Явное исключение снимает спор. Если сервис, чей суффикс накрывает хост,
+	// сам этот хост исключил, оператор уже развёл домены руками — жаловаться
+	// на общий домен там, где его больше нет, значит запрещать ровно то
+	// решение, которым спор и разрешают.
+	excluded := map[string]*domainset.Matcher{}
+	for _, s := range services {
+		var neg []domainset.Entry
+		for _, e := range s.Entries {
+			switch e.Kind {
+			case domainset.KindNotExact:
+				neg = append(neg, domainset.Entry{Kind: domainset.KindExact, Value: e.Value})
+			case domainset.KindNotSuffix:
+				neg = append(neg, domainset.Entry{Kind: domainset.KindSuffix, Value: e.Value})
+			case domainset.KindNotRegex:
+				neg = append(neg, domainset.Entry{Kind: domainset.KindRegex, Value: e.Value})
+			}
+		}
+		if len(neg) > 0 {
+			excluded[s.Slug] = domainset.NewSet(neg).Compile()
+		}
+	}
+	excludedBy := func(slug, host string) bool {
+		m, ok := excluded[slug]
+		return ok && m.Match(host)
+	}
+
 	type clash struct{ domain, a, b, ca, cb string }
 	var found []clash
 	seen := map[string]bool{}
@@ -387,7 +413,7 @@ func detectCountryClash(services []ServiceInput, nodes []NodeInput) error {
 				continue
 			}
 			// Тот же самый хост заявлен другим сервисом.
-			if o, ok := owner[e.Value]; ok {
+			if o, ok := owner[e.Value]; ok && !excludedBy(o, e.Value) {
 				note(e.Value, s.Slug, o)
 			}
 			// Хост попадает под суффикс другого сервиса: grok.x.com внутри x.com.
@@ -397,7 +423,7 @@ func detectCountryClash(services []ServiceInput, nodes []NodeInput) error {
 					break
 				}
 				rest = rest[i+1:]
-				if o, ok := suffixes[rest]; ok {
+				if o, ok := suffixes[rest]; ok && !excludedBy(o, e.Value) {
 					note(e.Value+" (внутри "+rest+")", s.Slug, o)
 				}
 			}

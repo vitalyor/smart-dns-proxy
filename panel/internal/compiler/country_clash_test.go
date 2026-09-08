@@ -20,6 +20,7 @@ func TestDetectCountryClash(t *testing.T) {
 	}
 	ex := func(v string) domainset.Entry { return domainset.Entry{Kind: domainset.KindExact, Value: v} }
 	su := func(v string) domainset.Entry { return domainset.Entry{Kind: domainset.KindSuffix, Value: v} }
+	no := func(v string) domainset.Entry { return domainset.Entry{Kind: domainset.KindNotSuffix, Value: v} }
 
 	cases := []struct {
 		name     string
@@ -48,6 +49,23 @@ func TestDetectCountryClash(t *testing.T) {
 				svc("claude", "us", ex("challenges.cloudflare.com")),
 				svc("gemini", "us", ex("challenges.cloudflare.com")),
 			},
+		},
+		{
+			// Так спор и разрешают: широкий сервис отдаёт один хост узкому.
+			// Ругаться на общий домен после этого — запрещать само решение.
+			name: "исключённый хост больше не общий",
+			services: []ServiceInput{
+				svc("gemini", "us", su("googleapis.com"), no("youtubei.googleapis.com")),
+				svc("youtube", "de", su("youtubei.googleapis.com")),
+			},
+		},
+		{
+			name: "без исключения тот же случай — ошибка",
+			services: []ServiceInput{
+				svc("gemini", "us", su("googleapis.com")),
+				svc("youtube", "de", su("youtubei.googleapis.com")),
+			},
+			wantErr: "youtubei.googleapis.com",
 		},
 		{
 			name: "разные страны без пересечений — не ошибка",
