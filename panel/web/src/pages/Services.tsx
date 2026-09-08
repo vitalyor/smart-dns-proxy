@@ -247,12 +247,13 @@ function RouteCell({ nodes }: { nodes: NodeRow[] }) {
     rows.length === 0 ? <span className="dim">—</span>
       : rows.map((n) => <span key={n.id} className="mono" title={countryName(n.country)}>{flagOf(n.country)} {n.name}</span>)
           .reduce((a, b) => <>{a}<span className="dim">, </span>{b}</>);
-  // Стрелка вниз, а не вправо: вход и выход стоят строками друг под другом,
-  // и стрелка вправо повисала в конце первой строки, указывая в пустоту.
+  // Стрелка — отдельная строка по центру между входом и выходом. Приклеенная
+  // к имени ноды, она читалась как часть имени, а не как переход между ними.
   return (
     <div className="route-cell">
       <div className="route-row">{line(part("ingress"))}</div>
-      <div className="route-row"><span className="dim">↓</span> {line(part("egress"))}</div>
+      <div className="route-arrow dim">↓</div>
+      <div className="route-row">{line(part("egress"))}</div>
     </div>
   );
 }
