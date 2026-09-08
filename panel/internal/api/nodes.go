@@ -181,6 +181,86 @@ func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// setNodeServices задаёт набор сервисов, которые ходят через эту ноду.
+//
+// Тот же список, что в карточке сервиса, но с другой стороны: заводя новую
+// ноду выхода, удобнее один раз отметить её сервисы, а не открывать каждый
+// сервис по очереди.
+//
+// Проверка на страны здесь обязана быть своя. В карточке сервиса её делает
+// checkServiceNodes по списку нод одного сервиса, а тут наоборот — одна нода
+// и много сервисов, и нарушить правило можно ровно так же: привязать немецкую
+// ноду к сервису, который уже выходит через США.
+func (s *Server) setNodeServices(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	var req struct {
+		ServiceIDs []string `json:"service_ids"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	n, err := store.One[store.Node](r.Context(), s.DB, `SELECT * FROM nodes WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if n.Role == "egress" && len(req.ServiceIDs) > 0 {
+		type row struct {
+			Name      string `db:"name"`
+			Countries string `db:"countries"`
+		}
+		// Страны выходных нод каждого выбранного сервиса, кроме этой ноды.
+		bad, err := store.Many[row](r.Context(), s.DB, `
+			SELECT sv.name,
+			       string_agg(DISTINCT COALESCE(NULLIF(n2.country,''),'страна не указана'), ', ') AS countries
+			FROM services sv
+			JOIN service_nodes sn ON sn.service_id = sv.id
+			JOIN nodes n2 ON n2.id = sn.node_id AND n2.role = 'egress'
+			WHERE sv.id = ANY($1::uuid[]) AND sn.node_id <> $2
+			GROUP BY sv.id, sv.name
+			HAVING COALESCE(NULLIF($3,''),'страна не указана') <> ALL(
+			       array_agg(DISTINCT COALESCE(NULLIF(n2.country,''),'страна не указана')))
+			   OR count(DISTINCT COALESCE(NULLIF(n2.country,''),'страна не указана')) > 1
+			ORDER BY sv.name`, req.ServiceIDs, id, n.Country)
+		if err != nil {
+			return err
+		}
+		if len(bad) > 0 {
+			var parts []string
+			for i, b := range bad {
+				if i == 4 {
+					parts = append(parts, fmt.Sprintf("… и ещё %d", len(bad)-4))
+					break
+				}
+				parts = append(parts, fmt.Sprintf("%s (уже через %s)", b.Name, b.Countries))
+			}
+			label := n.Country
+			if label == "" {
+				label = "страна не указана"
+			}
+			return badRequest("нода из страны %s не может обслуживать сервисы, которые уже выходят через другую страну — %s. "+
+				"Отказ основной ноды переносил бы трафик в другую страну под тем же аккаунтом",
+				label, strings.Join(parts, "; "))
+		}
+	}
+	// Новые связи получают приоритет ниже существующих: отметив ноду для
+	// сервиса, оператор добавляет резерв, а не переставляет основную.
+	if _, err := s.DB.Exec(r.Context(), `
+		WITH ins AS (
+			INSERT INTO service_nodes (service_id, node_id, priority)
+			SELECT x.sid, $1,
+			       COALESCE((SELECT max(priority) + 1 FROM service_nodes p WHERE p.service_id = x.sid), 1)
+			FROM unnest($2::uuid[]) AS x(sid)
+			ON CONFLICT (service_id, node_id) DO NOTHING
+		)
+		DELETE FROM service_nodes WHERE node_id = $1 AND service_id <> ALL($2::uuid[])`,
+		id, req.ServiceIDs); err != nil {
+		return err
+	}
+	s.audit(r.Context(), r, "node.services_set", "node", id, nil, map[string]any{"count": len(req.ServiceIDs)})
+	writeJSON(w, http.StatusOK, map[string]any{"node_id": id, "services": len(req.ServiceIDs)})
+	return nil
+}
+
 func (s *Server) nodeMaintenance(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Enabled bool `json:"enabled"`

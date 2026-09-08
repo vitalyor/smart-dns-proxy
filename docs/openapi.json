@@ -7332,6 +7332,77 @@
      }
     }
    }
+  },
+  "/nodes/{id}/services": {
+   "put": {
+    "summary": "Задать сервисы, которые ходят через ноду",
+    "description": "Заменяет набор сервисов этой ноды целиком. Для ноды выхода запрос отклоняется, если хотя бы один выбранный сервис уже выходит через другую страну: отказ основной ноды переносил бы трафик в другую страну под тем же аккаунтом.",
+    "tags": [
+     "nodes"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "service_ids": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "description": "Полный набор сервисов ноды; отсутствующие связи удаляются."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Набор сохранён",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "node_id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "services": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Сервис уже выходит через другую страну",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {
