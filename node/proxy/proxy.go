@@ -227,12 +227,29 @@ func (p *Proxy) handle(c net.Conn) {
 // dohForward tunnels a DoH-hostname ClientHello to the local DoH listener. It
 // returns true when the SNI matched DoH (whether or not the backend answered),
 // so the caller does not also count it as an unmanaged rejection.
+// dohMatch принимает и само имя резолвера, и личные имена под ним.
+//
+// Личное имя вида <токен>.dns.example.net нужно Android: в Private DNS вводится
+// только имя хоста, поля для токена там нет. Wildcard-сертификат покрывает
+// ровно эту форму, поэтому на 853 такие имена работали всегда — а на 443
+// сравнение шло точным, и DoH по личному имени молча отбивался как чужой SNI.
+//
+// Глубже одного уровня не принимаем: токен — одна метка, и расширять шаблон
+// значило бы принимать любое имя в зоне.
+func dohMatch(host, dohHost string) bool {
+	if host == dohHost {
+		return true
+	}
+	rest, ok := strings.CutSuffix(host, "."+dohHost)
+	return ok && rest != "" && !strings.Contains(rest, ".")
+}
+
 func (p *Proxy) dohForward(c net.Conn, host string, raw []byte) bool {
 	p.mu.RLock()
 	dohHost, backend := p.dohHost, p.dohBackend
 	idle := time.Duration(p.cfg.Ingress.IdleTimeoutSec) * time.Second
 	p.mu.RUnlock()
-	if dohHost == "" || backend == "" || host != dohHost {
+	if dohHost == "" || backend == "" || !dohMatch(host, dohHost) {
 		return false
 	}
 	up, err := net.DialTimeout("tcp", backend, 5*time.Second)
