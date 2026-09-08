@@ -359,7 +359,9 @@ func validate(c *model.NodeConfig, nodeID, role string) error {
 			return errors.New("ingress config contains no services")
 		}
 		for _, s := range c.Services {
-			if len(s.Egress.Targets) == 0 {
+			// Без целей сервис живёт, только если выходит прямо со входа.
+			// Иначе прокси принял бы соединение и не знал, куда его вести.
+			if len(s.Egress.Targets) == 0 && !s.Egress.Local {
 				return fmt.Errorf("service %q has no egress target", s.Slug)
 			}
 			if len(s.IngressV4) == 0 && len(s.IngressV6) == 0 {
