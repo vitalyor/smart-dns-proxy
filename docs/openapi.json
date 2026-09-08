@@ -7269,6 +7269,69 @@
      }
     }
    }
+  },
+  "/services/search": {
+   "get": {
+    "summary": "Найти сервисы по домену",
+    "description": "Ищет по правилам активной версии каждого сервиса. Совпадением считается вхождение подстроки, а также случай, когда правило является суффиксом запроса: «www.google.com» находит сервис, где записан «google.com», потому что домен покрывает поддомены. Запрос короче двух символов возвращает пустой список.",
+    "tags": [
+     "services"
+    ],
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Домен или его часть."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Найденные сервисы",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "name": {
+              "type": "string"
+             },
+             "slug": {
+              "type": "string"
+             },
+             "matched": {
+              "type": "array",
+              "items": {
+               "type": "string"
+              },
+              "description": "До восьми совпавших правил."
+             },
+             "total": {
+              "type": "integer",
+              "description": "Сколько правил совпало всего."
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
   }
  },
  "components": {

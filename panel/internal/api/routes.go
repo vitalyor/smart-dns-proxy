@@ -46,6 +46,7 @@ func (s *Server) Routes() http.Handler {
 	// --- services ---
 	api.HandleFunc("GET /services", s.wrap("services.list", v("viewer", s.listServices)))
 	api.HandleFunc("GET /services/catalog", s.wrap("services.catalog", v("viewer", s.serviceCatalog)))
+	api.HandleFunc("GET /services/search", s.wrap("services.search", v("viewer", s.searchServices)))
 	api.HandleFunc("POST /services", s.wrap("services.create", v("operator", s.createService)))
 	api.HandleFunc("POST /services/wizard", s.wrap("services.wizard", v("operator", s.serviceWizard)))
 	api.HandleFunc("PATCH /services/{id}", s.wrap("services.patch", v("operator", s.patchService)))
