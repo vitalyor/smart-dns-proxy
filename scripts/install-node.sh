@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Installs an ingress or egress node under the push model. Copy the bundle from
-# the panel (Ноды → Добавить ноду) — it carries the node's TLS identity and pins
-# the panel, exactly like remnanode's SECRET_KEY. The panel then connects to
-# this node; the node never dials out.
+# Installs an ingress or egress node under the push model. Copy the connection
+# key from the panel (Ноды → Добавить ноду) — it carries the node's TLS identity
+# and pins the panel, exactly like remnanode's SECRET_KEY. The panel then
+# connects to this node; the node never dials out.
 #
 #   sudo bash install-node.sh --role ingress --bundle <BASE64> --panel-ip 203.0.113.9
 set -euo pipefail
@@ -37,27 +37,33 @@ done
 # Человекочитаемая подпись роли для вывода оператору (сам ROLE — служебный).
 if [[ "$ROLE" == "ingress" ]]; then ROLE_LABEL="точка входа"; else ROLE_LABEL="точка выхода"; fi
 
-# Бандл можно передать флагом --bundle или вставить по запросу. Второе чище:
+# Ключ можно передать флагом --bundle или вставить по запросу. Второе чище:
 # секрет не остаётся в истории shell и в логах терминала.
+#
+# Флаг и переменная окружения называются bundle: это имена на проводе, их менять
+# нельзя — сломались бы уже установленные ноды. Оператору же везде говорим
+# «ключ подключения», ровно так это называется в панели.
 if [[ -z "$BUNDLE" ]]; then
-  printf '\n%sВставьте бандл из панели%s (Ноды → Добавить ноду → Копировать бандл), затем Enter:\n' "$(tput bold 2>/dev/null)" "$(tput sgr0 2>/dev/null)"
+  printf '\n%sВставьте ключ подключения из панели%s (Ноды → Добавить ноду → Копировать ключ), затем Enter:\n' "$(tput bold 2>/dev/null)" "$(tput sgr0 2>/dev/null)"
   while [[ -z "$BUNDLE" ]]; do
-    read -rp "Бандл: " BUNDLE </dev/tty || die "ввод прерван"
+    read -rp "Ключ подключения: " BUNDLE </dev/tty || die "ввод прерван"
     BUNDLE="${BUNDLE//[[:space:]]/}"   # убираем переносы/пробелы, если вставка их добавила
   done
 fi
-# Лёгкая проверка: бандл должен быть корректным base64 (сам агент проверит глубже).
-printf '%s' "$BUNDLE" | base64 -d >/dev/null 2>&1 || die "бандл не похож на base64 — скопируйте его из панели целиком"
+# Лёгкая проверка: ключ должен быть корректным base64 (сам агент проверит глубже).
+printf '%s' "$BUNDLE" | base64 -d >/dev/null 2>&1 || die "ключ не похож на base64 — скопируйте его из панели целиком"
 command -v docker >/dev/null || die "Docker не установлен"
 docker compose version >/dev/null 2>&1 || die "нужен Docker Compose v2"
 
 # --- preflight ---------------------------------------------------------------
 info "Проверка портов и времени"
 need_ports=("$MGMT_PORT")
-if [[ "$ROLE" == "ingress" ]]; then need_ports+=(53 80 443 853 "$DOH_PORT"); else need_ports+=("$RELAY_PORT"); fi
+# 53 в списке нет намеренно: нода его наружу не публикует. Устройства ходят по
+# DoH и DoT с токеном, а открытый 53 отвечал бы REFUSED кому угодно.
+if [[ "$ROLE" == "ingress" ]]; then need_ports+=(80 443 853 "$DOH_PORT"); else need_ports+=("$RELAY_PORT"); fi
 for p in "${need_ports[@]}"; do
   if command -v ss >/dev/null && ss -lnt "sport = :$p" 2>/dev/null | grep -q LISTEN; then
-    die "порт $p занят (частая причина на 53: systemd-resolved — отключите DNSStubListener)"
+    die "порт $p занят"
   fi
 done
 if command -v timedatectl >/dev/null; then
@@ -145,14 +151,32 @@ done
 ok "агент слушает порт $MGMT_PORT, ждёт подключения панели"
 
 # --- firewall ----------------------------------------------------------------
-if command -v ufw >/dev/null; then
-  if [[ -n "$PANEL_IP" ]]; then
-    ufw allow from "$PANEL_IP" to any port "$MGMT_PORT" proto tcp comment 'SmartDNS panel push' >/dev/null 2>&1 || true
-    ok "ufw: порт $MGMT_PORT открыт только для панели $PANEL_IP"
-  else
-    info "не задан --panel-ip: откройте порт $MGMT_PORT ТОЛЬКО для адреса панели вручную:"
-    printf '     ufw allow from <PANEL_IP> to any port %s proto tcp\n' "$MGMT_PORT"
-  fi
+# Правила ставим в цепочку DOCKER-USER, а не в ufw.
+#
+# Это не придирка к инструменту: порт, опубликованный контейнером, Docker
+# заворачивает своими правилами в таблице nat — раньше цепочки, где работает
+# ufw. Поэтому `ufw deny 3333` выполняется, рапортует об успехе и не делает
+# ничего. Раньше этот скрипт именно так и советовал, и оператор оставался с
+# портом управления, открытым всему интернету, будучи уверенным в обратном.
+# DOCKER-USER Docker просматривает до своих разрешающих правил, и туда попадает
+# то, что действительно фильтрует опубликованные порты.
+lock_mgmt_port() {
+  command -v iptables >/dev/null || { info "нет iptables — ограничьте порт $MGMT_PORT вручную"; return; }
+  iptables -C DOCKER-USER -p tcp --dport "$MGMT_PORT" -s "$1" -j RETURN 2>/dev/null \
+    || iptables -I DOCKER-USER 1 -p tcp --dport "$MGMT_PORT" -s "$1" -j RETURN
+  iptables -C DOCKER-USER -p tcp --dport "$MGMT_PORT" -j DROP 2>/dev/null \
+    || iptables -A DOCKER-USER -p tcp --dport "$MGMT_PORT" -j DROP
+}
+if [[ -n "$PANEL_IP" ]]; then
+  lock_mgmt_port "$PANEL_IP"
+  ok "порт $MGMT_PORT доступен только панели $PANEL_IP (правило в DOCKER-USER)"
+  info "правила iptables не переживают перезагрузку — закрепите их iptables-persistent"
+else
+  info "не задан --panel-ip: порт $MGMT_PORT сейчас открыт всему интернету."
+  info "Он защищён взаимным TLS, но светить им незачем. Закройте вручную:"
+  printf '     iptables -I DOCKER-USER 1 -p tcp --dport %s -s <IP-панели> -j RETURN\n' "$MGMT_PORT"
+  printf '     iptables -A DOCKER-USER -p tcp --dport %s -j DROP\n' "$MGMT_PORT"
+  info "ufw для этого не годится: Docker публикует порт мимо его правил"
 fi
 
 cat <<DONE
@@ -163,11 +187,9 @@ cat <<DONE
 DONE
 if [[ "$ROLE" == "ingress" ]]; then
 cat <<CHECK
-  Открыть на этой ноде для устройств:
-       ufw allow 853/tcp                       # DoT (Android Private DNS)
-       ufw allow 80/tcp                        # ACME HTTP-01 (выпуск сертификата из панели)
-       ufw allow from <VPN-подсеть> to any port 53   # обычный DNS только для своих
-       # 443 для SNI-прокси и DoH откройте согласно вашей раскладке
+  Устройствам нужны с этой ноды: 443 (SNI-прокси и DoH), 853 (DoT, Android
+  Private DNS) и $DOH_PORT, если DoH вынесен на отдельный порт. Обычный DNS на
+  53 наружу не публикуется: устройства ходят по DoH и DoT с токеном.
 CHECK
 else
 cat <<CHECK

@@ -85,9 +85,9 @@ ING1_ID=$(echo "$ING1" | jsonq "d['node_id']"); ING1_B=$(echo "$ING1" | jsonq "d
 ING2_ID=$(echo "$ING2" | jsonq "d['node_id']"); ING2_B=$(echo "$ING2" | jsonq "d['bundle']")
 EGR_ID=$(echo "$EGR"  | jsonq "d['node_id']");  EGR_B=$(echo "$EGR"  | jsonq "d['bundle']")
 [[ -n "$ING1_B" && -n "$ING2_B" && -n "$EGR_B" ]] \
-  && ok "три ноды созданы, бандлы выданы" || { bad "бандлы не выданы"; exit 1; }
+  && ok "три ноды созданы, ключи выданы" || { bad "ключи не выданы"; exit 1; }
 
-step "4/8 Установка бандлов и запуск агентов"
+step "4/8 Установка ключей и запуск агентов"
 # Drop each bundle where its agent waits for it, then start the agents. The
 # panel dials them; nodes never dial out.
 printf '%s' "$ING1_B" | cx_sh "cat > /shared/ingress1.bundle"
