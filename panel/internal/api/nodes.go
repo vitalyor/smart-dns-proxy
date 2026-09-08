@@ -203,6 +203,9 @@ func (s *Server) setNodeServices(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if n.Role == "ingress" {
+		return badRequest("у ноды входа сервисы не выбираются: каждый вход обслуживает все сервисы, а страну решает нода выхода")
+	}
 	if n.Role == "egress" && len(req.ServiceIDs) > 0 {
 		type row struct {
 			Name      string `db:"name"`

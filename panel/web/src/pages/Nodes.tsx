@@ -150,13 +150,19 @@ export default function Nodes() {
                           {/* Число, а не перечисление: нода обслуживает десятки сервисов,
                               и список имён растягивал строку на пол-экрана. Имена — в подсказке. */}
                           <td className="small dim" title={n.services?.join(", ")}>
-                            {n.services?.length ? plural(n.services.length, "сервис", "сервиса", "сервисов") : "—"}
+                            {n.role === "ingress"
+                              ? "все"
+                              : n.services?.length
+                                ? plural(n.services.length, "сервис", "сервиса", "сервисов")
+                                : "—"}
                           </td>
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
-                            <button className="btn sm ghost icon" title="Сервисы через эту ноду"
-                              aria-label={`Сервисы ноды ${n.name}`}
-                              onClick={() => setSvcNode(n)}><IconLayers /></button>
+                            {n.role === "egress" && (
+                              <button className="btn sm ghost icon" title="Сервисы через эту ноду"
+                                aria-label={`Сервисы ноды ${n.name}`}
+                                onClick={() => setSvcNode(n)}><IconLayers /></button>
+                            )}
                             {n.role === "ingress" && (
                               <button className="btn sm ghost icon" title="Сертификат резолвера"
                                 aria-label={`Сертификат ноды ${n.name}`}
@@ -669,10 +675,9 @@ function NodeServicesModal({ node, onClose, onSaved }: {
         </button>
       </>
     }>
-      <Notice kind="info" title={node.role === "egress" ? "Через какие сервисы выходит эта нода" : "Какие сервисы принимает эта нода"}>
-        {node.role === "egress"
-          ? "Ноды выхода одного сервиса должны быть из одной страны — сервисы, уже привязанные к другой стране, отмечены и недоступны."
-          : "Адреса отмеченных нод входа уходят в ответ DNS для этих сервисов."}
+      <Notice kind="info" title="Через какие сервисы выходит эта нода">
+        Ноды выхода одного сервиса должны быть из одной страны — сервисы, уже привязанные к другой стране,
+        отмечены и недоступны.
       </Notice>
       {error && <Notice kind="bad" title="Не сохранилось">{error}</Notice>}
       {list.loading ? <Spinner /> : (

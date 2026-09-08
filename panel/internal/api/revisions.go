@@ -179,12 +179,9 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 		if err != nil {
 			return nil, "", err
 		}
-		ingressNodes, egMembers, countries, err := serviceNodes(ctx, s.DB, sv.ID)
+		egMembers, countries, err := serviceEgress(ctx, s.DB, sv.ID)
 		if err != nil {
 			return nil, "", err
-		}
-		if len(ingressNodes) == 0 {
-			return nil, "", fmt.Errorf("у сервиса %q не выбрано ни одной ноды входа", sv.Name)
 		}
 		if len(egMembers) == 0 {
 			return nil, "", fmt.Errorf("у сервиса %q не выбрано ни одной ноды выхода", sv.Name)
@@ -203,7 +200,7 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 			ID: sv.ID, Slug: sv.Slug, Name: sv.Name, Priority: sv.Priority,
 			TTL: uint32(sv.DNSTTL), AllowedPorts: ports, UDPMode: sv.UDPMode,
 			Entries: entries, RuleSetHash: deref(sv.RuleSetHash),
-			IngressNodes: ingressNodes, EgressMembers: egMembers,
+			EgressMembers: egMembers,
 		})
 	}
 
@@ -275,42 +272,39 @@ func (s *Server) dnsConfig(ctx context.Context) model.DNSConfig {
 	return c
 }
 
-// serviceNodes возвращает ноды сервиса: входные — просто идентификаторами,
-// выходные — с приоритетом, и отдельно список стран выходных нод. Порядок в
-// списке и есть порядок отказа: первая живая нода и работает.
-func serviceNodes(ctx context.Context, db *store.DB, serviceID string) (ingress []string, egress []compiler.EgressMember, countries []string, err error) {
+// serviceEgress возвращает ноды выхода сервиса и список их стран. Порядок в
+// списке — порядок отказа: работает первая живая нода.
+//
+// Входы здесь не спрашиваются: сервис не выбирает вход. Каждая живая входная
+// нода обслуживает все сервисы, потому что вход — это дверь, через которую
+// устройство стучится, а не маршрут. Маршрут и страну решает выход.
+func serviceEgress(ctx context.Context, db *store.DB, serviceID string) (egress []compiler.EgressMember, countries []string, err error) {
 	type row struct {
 		NodeID   string `db:"node_id"`
-		Role     string `db:"role"`
 		Country  string `db:"country"`
 		Priority int    `db:"priority"`
 	}
 	rows, err := store.Many[row](ctx, db, `
-		SELECT sn.node_id::text, n.role, COALESCE(n.country,'') AS country, sn.priority
+		SELECT sn.node_id::text, COALESCE(n.country,'') AS country, sn.priority
 		FROM service_nodes sn JOIN nodes n ON n.id = sn.node_id
-		WHERE sn.service_id = $1 ORDER BY sn.priority, n.name`, serviceID)
+		WHERE sn.service_id = $1 AND n.role = 'egress' ORDER BY sn.priority, n.name`, serviceID)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		switch r.Role {
-		case "ingress":
-			ingress = append(ingress, r.NodeID)
-		case "egress":
-			// Вес больше не задаётся: раздачи по весам нет, есть только порядок.
-			egress = append(egress, compiler.EgressMember{NodeID: r.NodeID, Priority: r.Priority, Weight: 1})
-			label := r.Country
-			if label == "" {
-				label = "страна не указана"
-			}
-			if !seen[label] {
-				seen[label] = true
-				countries = append(countries, label)
-			}
+		// Вес больше не задаётся: раздачи по весам нет, есть только порядок.
+		egress = append(egress, compiler.EgressMember{NodeID: r.NodeID, Priority: r.Priority, Weight: 1})
+		label := r.Country
+		if label == "" {
+			label = "страна не указана"
+		}
+		if !seen[label] {
+			seen[label] = true
+			countries = append(countries, label)
 		}
 	}
-	return ingress, egress, countries, nil
+	return egress, countries, nil
 }
 
 // --- rollout -----------------------------------------------------------------
