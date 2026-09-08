@@ -288,7 +288,7 @@ func serviceEgress(ctx context.Context, db *store.DB, serviceID string) (egress 
 	rows, err := store.Many[row](ctx, db, `
 		SELECT sn.node_id::text, COALESCE(n.country,'') AS country, sn.priority
 		FROM service_nodes sn JOIN nodes n ON n.id = sn.node_id
-		WHERE sn.service_id = $1 AND n.role = 'egress' ORDER BY sn.priority, n.name`, serviceID)
+		WHERE sn.service_id = $1 ORDER BY sn.priority, n.name`, serviceID)
 	if err != nil {
 		return nil, nil, err
 	}

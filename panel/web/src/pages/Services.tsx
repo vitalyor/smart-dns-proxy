@@ -17,13 +17,16 @@ type Named = { id: string; name: string };
 type NodeRow = { id: string; name: string; role: string; country: string; status: string };
 type SearchHit = { id: string; name: string; slug: string; matched: string[]; total: number };
 
-// Страны выходных нод в выборе. Больше одной — сервис нельзя сохранить: отказ
+// Страны выхода в выборе. Больше одной — сервис нельзя сохранить: отказ
 // основной ноды увёл бы трафик в другую страну под тем же аккаунтом.
+//
+// Вход считается наравне с выходами: отмеченный вход означает «выходить прямо
+// отсюда», и его страна — такая же страна выхода, как у любой другой ноды.
 function egressCountries(nodes: NodeRow[], ids: string[]): string[] {
   const seen = new Set<string>();
   for (const id of ids) {
     const n = nodes.find((x) => x.id === id);
-    if (n?.role === "egress") seen.add(n.country || "");
+    if (n) seen.add(n.country || "");
   }
   return [...seen];
 }
@@ -35,8 +38,9 @@ function NodePicker({ nodes, value, onChange }: {
 }) {
   const toggle = (id: string) =>
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
-  const rankIn = (role: string, id: string) =>
-    value.filter((v) => nodes.find((n) => n.id === v)?.role === role).indexOf(id);
+  // Порядок общий для обеих ролей: прямой выход и туннель стоят в одной
+  // очереди отказа, поэтому и нумеровать их надо сквозным списком.
+  const rankIn = (id: string) => value.indexOf(id);
 
   const section = (role: "ingress" | "egress", title: string, hint: string) => {
     const rows = nodes.filter((n) => n.role === role);
@@ -46,7 +50,7 @@ function NodePicker({ nodes, value, onChange }: {
           ? <div className="tiny dim">нод этой роли пока нет</div>
           : rows.map((n) => {
               const on = value.includes(n.id);
-              const r = on ? rankIn(role, n.id) : -1;
+              const r = on ? rankIn(n.id) : -1;
               return (
                 <label key={n.id} className={`pick${on ? " on" : ""}`}>
                   <input type="checkbox" checked={on} onChange={() => toggle(n.id)} />
@@ -67,11 +71,15 @@ function NodePicker({ nodes, value, onChange }: {
   const ingressCount = nodes.filter((n) => n.role === "ingress").length;
   return (
     <>
-      <Notice kind="info" title="Вход выбирать не нужно">
-        Устройства стучатся во {ingressCount === 1 ? "вход" : `все входы (${ingressCount})`}, и каждый вход
-        обслуживает все сервисы — это дверь, а не маршрут. Страну и путь решает нода выхода.
+      <Notice kind="info" title="Куда стучатся устройства">
+        Во {ingressCount === 1 ? "вход" : `все входы (${ingressCount})`}, и каждый вход обслуживает все
+        сервисы — это дверь. А здесь выбирается, куда сервис пойдёт дальше: в туннель до ноды выхода или
+        сразу наружу с самого входа.
       </Notice>
       {section("egress", "Ноды выхода", "Через кого сервис выходит к сайту. Первая отмеченная — основная, остальные подхватят при её отказе.")}
+      {section("ingress", "Прямой выход со входа",
+        "Без туннеля, наружу прямо с входной ноды. Годится, когда провайдер входа этот сайт не режет, " +
+        "а нужна как раз его страна: лишний переход только добавляет задержку.")}
       {countries.length > 1 && (
         <Notice kind="warn" title="Ноды выхода из разных стран">
           Выбраны {countries.map((c) => countryName(c) || "без страны").join(" и ")}. При отказе основной ноды
@@ -314,7 +322,9 @@ function ServiceWizard({ nodes, onClose, onSaved }: {
     (mode === "github" && repo.trim() !== "" && path.trim() !== "") ||
     (mode === "url" && url.trim() !== "");
 
-  const hasEgress = nodeIds.some((id) => nodes.find((n) => n.id === id)?.role === "egress");
+  // Выход есть, если отмечена хоть одна нода: заграничная — через туннель,
+  // входная — прямо с неё.
+  const hasEgress = nodeIds.length > 0;
   const mixedCountries = egressCountries(nodes, nodeIds).length > 1;
   const canNext = step === 1 ? name.trim() !== ""
     : step === 2 ? domainsChosen

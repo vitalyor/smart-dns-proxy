@@ -157,11 +157,9 @@ func (s *Server) checkServiceNodes(ctx context.Context, ids []string) error {
 	}
 	byCountry := map[string][]string{}
 	for _, r := range rows {
-		// Входы у сервиса не выбираются: их обслуживают все. Прислать сюда
-		// входную ноду — значит настраивать то, чего больше нет.
-		if r.Role == "ingress" {
-			return badRequest("нода входа %q не выбирается у сервиса: каждый вход обслуживает все сервисы", r.Name)
-		}
+		// Входная нода в списке значит «выходить прямо отсюда, без туннеля».
+		// Страна у неё учитывается наравне с остальными: смешать выход с входа
+		// и заграничный выход — это та же смена географии под одним аккаунтом.
 		byCountry[r.Country] = append(byCountry[r.Country], r.Name)
 	}
 	if len(byCountry) > 1 {

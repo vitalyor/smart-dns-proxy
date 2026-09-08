@@ -203,10 +203,10 @@ func (s *Server) setNodeServices(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if n.Role == "ingress" {
-		return badRequest("у ноды входа сервисы не выбираются: каждый вход обслуживает все сервисы, а страну решает нода выхода")
-	}
-	if n.Role == "egress" && len(req.ServiceIDs) > 0 {
+	// Вход обслуживает все сервисы, но выбранные здесь выходят прямо с него,
+	// без туннеля. Проверка стран одна и та же для обеих ролей: она смотрит,
+	// не окажется ли у сервиса выход ещё и в другой стране.
+	if len(req.ServiceIDs) > 0 {
 		type row struct {
 			Name      string `db:"name"`
 			Countries string `db:"countries"`
@@ -217,7 +217,7 @@ func (s *Server) setNodeServices(w http.ResponseWriter, r *http.Request) error {
 			       string_agg(DISTINCT COALESCE(NULLIF(n2.country,''),'страна не указана'), ', ') AS countries
 			FROM services sv
 			JOIN service_nodes sn ON sn.service_id = sv.id
-			JOIN nodes n2 ON n2.id = sn.node_id AND n2.role = 'egress'
+			JOIN nodes n2 ON n2.id = sn.node_id
 			WHERE sv.id = ANY($1::uuid[]) AND sn.node_id <> $2
 			GROUP BY sv.id, sv.name
 			HAVING COALESCE(NULLIF($3,''),'страна не указана') <> ALL(

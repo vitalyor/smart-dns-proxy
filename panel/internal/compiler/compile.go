@@ -180,6 +180,13 @@ func Compile(in Input) (*Output, error) {
 			if !ok || !n.Eligible {
 				continue
 			}
+			// Входная нода в списке — это «выходить прямо отсюда». Туннеля нет,
+			// значит нет ни адреса реле, ни записи в разрешённых у выхода:
+			// сервис уже опознан по имени на самом входе.
+			if n.Role == "ingress" {
+				policy.Local = true
+				continue
+			}
 			ep := n.RelayEndpoint
 			if ep == "" && n.PublicIPv4 != "" {
 				ep = n.PublicIPv4 + ":8443"
@@ -201,7 +208,7 @@ func Compile(in Input) (*Output, error) {
 			}
 		}
 		sort.SliceStable(policy.Targets, func(i, j int) bool { return policy.Targets[i].Priority < policy.Targets[j].Priority })
-		if len(policy.Targets) == 0 {
+		if len(policy.Targets) == 0 && !policy.Local {
 			return nil, fmt.Errorf("service %q has no usable egress node: pick another egress group or bring a node back", s.Slug)
 		}
 		if policy.FailThreshold == 0 {
@@ -322,9 +329,10 @@ func VerifyManifest(m model.Manifest, pub ed25519.PublicKey) error { return m.Ve
 func detectCountryClash(services []ServiceInput, nodes []NodeInput) error {
 	country := map[string]string{}
 	for _, n := range nodes {
-		if n.Role == "egress" {
-			country[n.ID] = n.Country
-		}
+		// И входы тоже: сервис может выходить прямо со входа, и тогда страна
+		// сервиса — страна входа. Без этого конфликт доменов между таким
+		// сервисом и заграничным остался бы незамеченным.
+		country[n.ID] = n.Country
 	}
 	// Страна сервиса. Ноды выхода одного сервиса уже обязаны быть из одной
 	// страны, так что берём первую.

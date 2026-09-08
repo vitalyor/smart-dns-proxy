@@ -158,11 +158,10 @@ export default function Nodes() {
                           </td>
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
-                            {n.role === "egress" && (
-                              <button className="btn sm ghost icon" title="Сервисы через эту ноду"
-                                aria-label={`Сервисы ноды ${n.name}`}
-                                onClick={() => setSvcNode(n)}><IconLayers /></button>
-                            )}
+                            <button className="btn sm ghost icon"
+                              title={n.role === "ingress" ? "Сервисы, выходящие прямо с этой ноды" : "Сервисы через эту ноду"}
+                              aria-label={`Сервисы ноды ${n.name}`}
+                              onClick={() => setSvcNode(n)}><IconLayers /></button>
                             {n.role === "ingress" && (
                               <button className="btn sm ghost icon" title="Сертификат резолвера"
                                 aria-label={`Сертификат ноды ${n.name}`}
@@ -643,8 +642,9 @@ function NodeServicesModal({ node, onClose, onSaved }: {
   // Страна сервиса по его нодам выхода. Если она чужая, ноду туда добавить
   // нельзя: отказ основной ноды увёл бы трафик в другую страну.
   const blockedBy = (s: SvcRow): string | null => {
-    if (node.role !== "egress") return null;
-    const other = s.nodes.filter((n) => n.role === "egress" && n.id !== node.id);
+    // Вход в этом списке значит «выходить прямо с него», поэтому его страна
+    // участвует в сравнении наравне с заграничными нодами.
+    const other = s.nodes.filter((n) => n.id !== node.id);
     const cc = [...new Set(other.map((n) => n.country || "?"))];
     if (cc.length === 0) return null;
     if (cc.length === 1 && cc[0] === (node.country || "?")) return null;

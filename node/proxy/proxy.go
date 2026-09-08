@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -204,11 +205,26 @@ func (p *Proxy) handle(c net.Conn) {
 		return
 	}
 
-	up, tgt, err := route.pool.dial(p.tlsCfg, host, port, time.Duration(st.DialTimeoutMs)*time.Millisecond)
-	if err != nil {
-		mConn.Inc("service", route.svc.Slug, "result", "no_egress")
-		slog.Warn("no usable egress", "service", route.svc.Slug, "err", err)
-		return
+	timeout := time.Duration(st.DialTimeoutMs) * time.Millisecond
+	var up net.Conn
+	var tgt *target
+	// Прямой выход с самой входной ноды. Нужен там, где провайдер входа сайт не
+	// режет: туннель до заграничного выхода добавил бы только задержку. Если
+	// прямой выход не удался, а запасные ноды у сервиса есть, идём в туннель.
+	if route.svc.Egress.Local {
+		up, err = dialDirect(host, port, timeout)
+		if err != nil {
+			mConn.Inc("service", route.svc.Slug, "result", "local_failed")
+			slog.Warn("direct exit failed", "service", route.svc.Slug, "err", err)
+		}
+	}
+	if up == nil {
+		up, tgt, err = route.pool.dial(p.tlsCfg, host, port, timeout)
+		if err != nil {
+			mConn.Inc("service", route.svc.Slug, "result", "no_egress")
+			slog.Warn("no usable egress", "service", route.svc.Slug, "err", err)
+			return
+		}
 	}
 	// Replay the ClientHello bytes verbatim: TLS is never terminated here.
 	if _, err := up.Write(raw); err != nil {
@@ -222,6 +238,26 @@ func (p *Proxy) handle(c net.Conn) {
 	mBytes.Add(a2b+int64(len(raw)), "service", route.svc.Slug, "direction", "up")
 	mBytes.Add(b2a, "service", route.svc.Slug, "direction", "down")
 	_ = tgt
+}
+
+// dialDirect выходит в интернет прямо с входной ноды, без туннеля.
+//
+// Единственная тонкость — петля. Имя сервиса на этой же ноде разрешается в её
+// собственный адрес, и соединение вернулось бы в этот же прокси, а тот снова
+// набрал бы сам себя — до конца сокетов. Поэтому сверяем, куда попали.
+func dialDirect(host string, port int, timeout time.Duration) (net.Conn, error) {
+	d := &net.Dialer{Timeout: timeout}
+	c, err := d.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return nil, err
+	}
+	ra, aok := c.RemoteAddr().(*net.TCPAddr)
+	la, bok := c.LocalAddr().(*net.TCPAddr)
+	if aok && bok && ra.IP.Equal(la.IP) {
+		_ = c.Close()
+		return nil, fmt.Errorf("прямой выход ведёт на саму ноду (%s): имя разрешается в её адрес", ra.IP)
+	}
+	return c, nil
 }
 
 // dohForward tunnels a DoH-hostname ClientHello to the local DoH listener. It
