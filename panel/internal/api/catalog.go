@@ -23,7 +23,7 @@ type catalogEntry struct {
 var catalog = []catalogEntry{
 	{Slug: "chatgpt", Name: "ChatGPT", Preset: "openai", ProbeHost: "chatgpt.com"},
 	{Slug: "gemini", Name: "Gemini", Preset: "gemini", ProbeHost: "gemini.google.com"},
-	{Slug: "claude", Name: "Claude", Preset: "claude", ProbeHost: "claude.ai"},
+	{Slug: "anthropic", Name: "Anthropic", Preset: "claude", ProbeHost: "claude.ai"},
 	{Slug: "cursor", Name: "Cursor", Preset: "cursor", ProbeHost: "cursor.com"},
 }
 
