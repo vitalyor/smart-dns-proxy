@@ -64,9 +64,13 @@ function NodePicker({ nodes, value, onChange }: {
   };
 
   const countries = egressCountries(nodes, value);
+  const ingressCount = nodes.filter((n) => n.role === "ingress").length;
   return (
     <>
-      {section("ingress", "Ноды входа", "Куда устройства отправляют запросы. Их адреса уходят в ответ DNS.")}
+      <Notice kind="info" title="Вход выбирать не нужно">
+        Устройства стучатся во {ingressCount === 1 ? "вход" : `все входы (${ingressCount})`}, и каждый вход
+        обслуживает все сервисы — это дверь, а не маршрут. Страну и путь решает нода выхода.
+      </Notice>
       {section("egress", "Ноды выхода", "Через кого сервис выходит к сайту. Первая отмеченная — основная, остальные подхватят при её отказе.")}
       {countries.length > 1 && (
         <Notice kind="warn" title="Ноды выхода из разных стран">
@@ -251,7 +255,7 @@ function RouteCell({ nodes }: { nodes: NodeRow[] }) {
   // к имени ноды, она читалась как часть имени, а не как переход между ними.
   return (
     <div className="route-cell">
-      <div className="route-row">{line(part("ingress"))}</div>
+      <div className="route-row dim">любой вход</div>
       <div className="route-arrow dim">↓</div>
       <div className="route-row">{line(part("egress"))}</div>
     </div>
@@ -296,8 +300,7 @@ function ServiceWizard({ nodes, onClose, onSaved }: {
   // и мастер не заставляет кликать очевидное.
   const only = (role: string) => nodes.filter((n) => n.role === role);
   const [nodeIds, setNodeIds] = useState<string[]>(
-    [...(only("ingress").length === 1 ? [only("ingress")[0].id] : []),
-     ...(only("egress").length === 1 ? [only("egress")[0].id] : [])]);
+    only("egress").length === 1 ? [only("egress")[0].id] : []);
 
   const [ttl, setTtl] = useState(60);
   const [ports, setPorts] = useState("443");
@@ -311,12 +314,11 @@ function ServiceWizard({ nodes, onClose, onSaved }: {
     (mode === "github" && repo.trim() !== "" && path.trim() !== "") ||
     (mode === "url" && url.trim() !== "");
 
-  const hasIngress = nodeIds.some((id) => nodes.find((n) => n.id === id)?.role === "ingress");
   const hasEgress = nodeIds.some((id) => nodes.find((n) => n.id === id)?.role === "egress");
   const mixedCountries = egressCountries(nodes, nodeIds).length > 1;
   const canNext = step === 1 ? name.trim() !== ""
     : step === 2 ? domainsChosen
-    : step === 3 ? hasIngress && hasEgress && !mixedCountries
+    : step === 3 ? hasEgress && !mixedCountries
     : true;
 
   const submit = async () => {
@@ -421,7 +423,8 @@ function ServiceWizard({ nodes, onClose, onSaved }: {
         <>
           {missingNodes && (
             <Notice kind="warn" title="Сначала заведите ноды">
-              Сервису нужны хотя бы одна нода входа и одна нода выхода. Заведите их на странице «Ноды» и вернитесь.
+              Сервису нужна хотя бы одна нода выхода, а флоту — хотя бы одна нода входа.
+              Заведите их на странице «Ноды» и вернитесь.
             </Notice>
           )}
           <NodePicker nodes={nodes} value={nodeIds} onChange={setNodeIds} />

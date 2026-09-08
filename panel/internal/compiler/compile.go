@@ -44,7 +44,6 @@ type ServiceInput struct {
 	UDPMode       string
 	Entries       []domainset.Entry
 	RuleSetHash   string
-	IngressNodes  []string // node IDs, already filtered to eligible members
 	EgressMembers []EgressMember
 	Policy        model.EgressPolicy
 }
@@ -141,28 +140,34 @@ func Compile(in Input) (*Output, error) {
 	egressAllow := map[string][]domainset.Entry{}
 	egressPorts := map[string]map[int]bool{}
 
+	// Адреса всех живых входных нод — они одинаковы для каждого сервиса.
+	var ingressAddrs, ingressAddrs6 []string
+	for _, n := range in.Nodes {
+		if n.Role != "ingress" || !n.Eligible {
+			continue
+		}
+		if n.PublicIPv4 != "" {
+			ingressAddrs = append(ingressAddrs, n.PublicIPv4)
+		}
+		if n.PublicIPv6 != "" {
+			ingressAddrs6 = append(ingressAddrs6, n.PublicIPv6)
+		}
+	}
+	sort.Strings(ingressAddrs)
+	sort.Strings(ingressAddrs6)
+	if len(ingressAddrs) == 0 {
+		return nil, fmt.Errorf("во флоте нет ни одной живой входной ноды с публичным IPv4: устройствам нечего отдавать в ответ DNS")
+	}
+
 	for _, s := range in.Services {
 		if len(s.Entries) == 0 {
 			out.Warnings = append(out.Warnings, fmt.Sprintf("service %q has an empty rule set and will match nothing", s.Slug))
 		}
-		var v4, v6 []string
-		for _, id := range s.IngressNodes {
-			n, ok := nodes[id]
-			if !ok || !n.Eligible {
-				continue
-			}
-			if n.PublicIPv4 != "" {
-				v4 = append(v4, n.PublicIPv4)
-			}
-			if n.PublicIPv6 != "" {
-				v6 = append(v6, n.PublicIPv6)
-			}
-		}
-		if len(v4) == 0 {
-			out.Warnings = append(out.Warnings, fmt.Sprintf("service %q has no healthy ingress node with a public IPv4 address", s.Slug))
-		}
-		sort.Strings(v4)
-		sort.Strings(v6)
+		// Входы не выбираются у сервиса: каждый сервис публикуется со всех
+		// живых входных нод. Вход — это дверь, а не маршрут; страну решает
+		// выход. Все адреса уходят в один ответ DNS и перемешиваются, поэтому
+		// устройство само переходит на следующий вход, если один лёг.
+		v4, v6 := ingressAddrs, ingressAddrs6
 
 		policy := s.Policy
 		// Режим ровно один: первая живая нода по порядку. Раздача по весам
@@ -233,7 +238,8 @@ func Compile(in Input) (*Output, error) {
 		}
 		switch n.Role {
 		case "ingress":
-			cfg.Services = servicesForIngress(compiled, n.ID, in.Services)
+			// Каждая входная нода обслуживает все сервисы: она дверь, а не маршрут.
+			cfg.Services = compiled
 			cfg.DNS = in.DNS
 			cfg.Ingress = in.Ingress
 			if cfg.DNS.PublishAAAA && n.PublicIPv6 == "" {
@@ -301,24 +307,6 @@ func Compile(in Input) (*Output, error) {
 
 // VerifyManifest checks the panel signature on the agent side.
 func VerifyManifest(m model.Manifest, pub ed25519.PublicKey) error { return m.Verify(pub) }
-
-func servicesForIngress(all []model.Service, nodeID string, inputs []ServiceInput) []model.Service {
-	member := map[string]bool{}
-	for _, s := range inputs {
-		for _, id := range s.IngressNodes {
-			if id == nodeID {
-				member[s.Slug] = true
-			}
-		}
-	}
-	out := make([]model.Service, 0, len(all))
-	for _, s := range all {
-		if member[s.Slug] {
-			out = append(out, s)
-		}
-	}
-	return out
-}
 
 // detectCountryClash не даёт собрать ревизию, если два сервиса делят домен, а
 // выходят из разных стран.

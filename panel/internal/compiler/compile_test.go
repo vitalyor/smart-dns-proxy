@@ -20,7 +20,6 @@ func baseInput() Input {
 		Services: []ServiceInput{{
 			ID: "s1", Slug: "gemini", Name: "Gemini", Priority: 100, TTL: 60,
 			Entries:       []domainset.Entry{{Kind: domainset.KindSuffix, Value: "gemini.google.com"}},
-			IngressNodes:  []string{"in1"},
 			EgressMembers: []EgressMember{{NodeID: "eg1", Priority: 1, Weight: 1}},
 		}},
 		DNS: model.DNSConfig{Upstream: "127.0.0.1:5335", MinTTL: 30, MaxTTL: 300},
@@ -70,7 +69,6 @@ func TestEqualPriorityConflictFailsCompilation(t *testing.T) {
 	in.Services = append(in.Services, ServiceInput{
 		ID: "s2", Slug: "other", Name: "Other", Priority: 100, TTL: 60,
 		Entries:       []domainset.Entry{{Kind: domainset.KindSuffix, Value: "gemini.google.com"}},
-		IngressNodes:  []string{"in1"},
 		EgressMembers: []EgressMember{{NodeID: "eg1", Priority: 1}},
 	})
 	_, err := Compile(in)
@@ -99,7 +97,6 @@ func TestDifferentPriorityResolvesOverlap(t *testing.T) {
 	in.Services = append(in.Services, ServiceInput{
 		ID: "s2", Slug: "other", Name: "Other", Priority: 200, TTL: 60,
 		Entries:       []domainset.Entry{{Kind: domainset.KindSuffix, Value: "gemini.google.com"}},
-		IngressNodes:  []string{"in1"},
 		EgressMembers: []EgressMember{{NodeID: "eg1", Priority: 1}},
 	})
 	if _, err := Compile(in); err != nil {
