@@ -7,7 +7,7 @@
 #   sudo bash install-node.sh --role ingress --bundle <BASE64> --panel-ip 203.0.113.9
 set -euo pipefail
 
-ROLE=""; BUNDLE=""; PANEL_IP=""; DIR=/opt/smartdns-node
+ROLE=""; BUNDLE=""; PANEL_IP=""; INGRESS_IP=""; DIR=/opt/smartdns-node
 SMARTDNS_VERSION="${SMARTDNS_VERSION:-0.4.0}"
 MGMT_PORT=3333; RELAY_PORT=8443; DOH_PORT=8443
 ASSUME_YES=0
@@ -22,6 +22,7 @@ while [[ $# -gt 0 ]]; do
     --role) ROLE="$2"; shift 2;;
     --bundle) BUNDLE="$2"; shift 2;;
     --panel-ip) PANEL_IP="$2"; shift 2;;
+    --ingress-ip) INGRESS_IP="$2"; shift 2;;
     --dir) DIR="$2"; shift 2;;
     --mgmt-port) MGMT_PORT="$2"; shift 2;;
     --relay-port) RELAY_PORT="$2"; shift 2;;
@@ -85,6 +86,16 @@ PLAN
 if [[ $ASSUME_YES -eq 0 ]]; then
   read -rp "Продолжить? [y/N] " a
   [[ "$a" == "y" || "$a" == "Y" ]] || { echo "Отменено."; exit 0; }
+fi
+
+# Контейнеры работают в сети хоста и не от рута, а входной ноде нужны 53, 80,
+# 443 и 853 — порты ниже 1024. В отдельной сети Docker разрешал такие привязки
+# сам, в сети хоста этой поблажки нет, и процессы просто не стартуют.
+if [[ "$ROLE" == "ingress" ]]; then
+  printf '# Ноде нужны 53, 80, 443, 853, а её процессы работают не от рута.\nnet.ipv4.ip_unprivileged_port_start=0\n' \
+    > /etc/sysctl.d/99-smartdns.conf
+  sysctl -q -p /etc/sysctl.d/99-smartdns.conf 2>/dev/null || true
+  ok "низкие порты разрешены непривилегированным процессам (99-smartdns.conf)"
 fi
 
 mkdir -p "$DIR"
@@ -151,32 +162,40 @@ done
 ok "агент слушает порт $MGMT_PORT, ждёт подключения панели"
 
 # --- firewall ----------------------------------------------------------------
-# Правила ставим в цепочку DOCKER-USER, а не в ufw.
+# Контейнеры ноды работают в сети хоста и портов не публикуют, поэтому ufw —
+# единственная точка управления ими, как и ожидает оператор.
 #
-# Это не придирка к инструменту: порт, опубликованный контейнером, Docker
-# заворачивает своими правилами в таблице nat — раньше цепочки, где работает
-# ufw. Поэтому `ufw deny 3333` выполняется, рапортует об успехе и не делает
-# ничего. Раньше этот скрипт именно так и советовал, и оператор оставался с
-# портом управления, открытым всему интернету, будучи уверенным в обратном.
-# DOCKER-USER Docker просматривает до своих разрешающих правил, и туда попадает
-# то, что действительно фильтрует опубликованные порты.
-lock_mgmt_port() {
-  command -v iptables >/dev/null || { info "нет iptables — ограничьте порт $MGMT_PORT вручную"; return; }
-  iptables -C DOCKER-USER -p tcp --dport "$MGMT_PORT" -s "$1" -j RETURN 2>/dev/null \
-    || iptables -I DOCKER-USER 1 -p tcp --dport "$MGMT_PORT" -s "$1" -j RETURN
-  iptables -C DOCKER-USER -p tcp --dport "$MGMT_PORT" -j DROP 2>/dev/null \
-    || iptables -A DOCKER-USER -p tcp --dport "$MGMT_PORT" -j DROP
-}
-if [[ -n "$PANEL_IP" ]]; then
-  lock_mgmt_port "$PANEL_IP"
-  ok "порт $MGMT_PORT доступен только панели $PANEL_IP (правило в DOCKER-USER)"
-  info "правила iptables не переживают перезагрузку — закрепите их iptables-persistent"
+# Раньше здесь стоял совет закрыть порт через ufw, и он был вредным: при
+# публикации портов Docker заворачивает их своими правилами раньше цепочек ufw,
+# команда выполнялась, рапортовала об успехе и не делала ничего. Оператор
+# оставался с портом управления, открытым всему интернету, будучи уверенным в
+# обратном. В сети хоста этой ловушки нет.
+if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+  allow() { ufw allow "$@" >/dev/null 2>&1 || true; }
+  if [[ -n "$PANEL_IP" ]]; then
+    allow from "$PANEL_IP" proto tcp to any port "$MGMT_PORT" comment 'SmartDNS: панель управляет нодой'
+    ok "порт $MGMT_PORT открыт только для панели $PANEL_IP"
+  else
+    allow proto tcp to any port "$MGMT_PORT" comment 'SmartDNS: панель управляет нодой'
+    info "порт $MGMT_PORT открыт всем: задайте --panel-ip, чтобы сузить до адреса панели"
+  fi
+  if [[ "$ROLE" == "ingress" ]]; then
+    allow proto tcp to any port 443 comment 'SmartDNS: SNI-прокси и DoH'
+    allow proto tcp to any port 853 comment 'SmartDNS: DoT'
+    allow proto tcp to any port "$DOH_PORT" comment 'SmartDNS: DoH'
+    ok "открыты 443, 853 и $DOH_PORT — устройствам"
+  else
+    if [[ -n "$INGRESS_IP" ]]; then
+      allow from "$INGRESS_IP" proto tcp to any port "$RELAY_PORT" comment 'SmartDNS: туннель от входной ноды'
+      ok "порт $RELAY_PORT открыт только для входной ноды $INGRESS_IP"
+    else
+      allow proto tcp to any port "$RELAY_PORT" comment 'SmartDNS: туннель от входной ноды'
+      info "порт $RELAY_PORT открыт всем: задайте --ingress-ip, чтобы сузить до входной ноды"
+    fi
+  fi
+  info "порт 53 наружу не открываем: устройства ходят по DoH и DoT с токеном"
 else
-  info "не задан --panel-ip: порт $MGMT_PORT сейчас открыт всему интернету."
-  info "Он защищён взаимным TLS, но светить им незачем. Закройте вручную:"
-  printf '     iptables -I DOCKER-USER 1 -p tcp --dport %s -s <IP-панели> -j RETURN\n' "$MGMT_PORT"
-  printf '     iptables -A DOCKER-USER -p tcp --dport %s -j DROP\n' "$MGMT_PORT"
-  info "ufw для этого не годится: Docker публикует порт мимо его правил"
+  info "ufw не активен — откройте порты сами: $MGMT_PORT для панели и ${need_ports[*]} для работы"
 fi
 
 cat <<DONE
