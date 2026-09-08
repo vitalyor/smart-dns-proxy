@@ -33,6 +33,8 @@ type Runner struct {
 	LabMode      bool
 	HealthRetain time.Duration
 	AuditRetain  time.Duration
+	// KeepRevisions — сколько последних ревизий оставлять в списке. 0 — по умолчанию 20.
+	KeepRevisions int
 }
 
 // Enqueue adds a job, optionally deduplicated.
@@ -63,6 +65,11 @@ func (r *Runner) Start(ctx context.Context) {
 func (r *Runner) loop(ctx context.Context, every time.Duration, fn func(context.Context) error) {
 	t := time.NewTicker(every)
 	defer t.Stop()
+	// Один прогон сразу, не дожидаясь первого тика. Уборка идёт раз в час, и
+	// без этого перезапуск панели означал бы час со старым мусором на экране.
+	if err := fn(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Error("scheduler tick failed", "err", err)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -326,7 +333,33 @@ func (r *Runner) retention(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return r.trimRevisions(ctx)
+}
+
+// trimRevisions оставляет последние keepRevisions ревизий и удаляет остальные.
+//
+// Ревизии почти не занимают места — они забивают список, в котором за неделю
+// набирается под сотню записей, и нужная тонет среди старых. Поэтому это
+// уборка ради обозримости, а не ради диска.
+//
+// Никогда не удаляем: активную и ту, на которую ссылается хоть одна нода. У
+// внешнего ключа nodes→revisions стоит SET NULL, то есть удаление такой
+// ревизии не сорвалось бы с ошибкой, а молча обнулило бы ноде поле
+// «применена», и панель решила бы, что нода без конфигурации.
+func (r *Runner) trimRevisions(ctx context.Context) error {
+	keep := r.KeepRevisions
+	if keep <= 0 {
+		keep = 20
+	}
+	_, err := r.DB.Exec(ctx, `
+		DELETE FROM revisions r
+		WHERE r.state <> 'active'
+		  AND r.id NOT IN (
+		        SELECT applied_revision_id FROM nodes WHERE applied_revision_id IS NOT NULL
+		        UNION
+		        SELECT desired_revision_id FROM nodes WHERE desired_revision_id IS NOT NULL)
+		  AND r.sequence <= COALESCE((SELECT max(sequence) FROM revisions), 0) - $1`, keep)
+	return err
 }
 
 func (r *Runner) event(ctx context.Context, level, component, code, msg string, nodeID *string) {
