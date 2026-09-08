@@ -62,7 +62,12 @@ type EgressTarget struct {
 // EgressPolicy describes how ingress picks among targets. The node applies it
 // locally so failover keeps working with the panel offline.
 type EgressPolicy struct {
-	Mode          string         `json:"mode"` // primary_fallback|weighted|lowest_latency|manual_fixed
+	Mode string `json:"mode"` // primary_fallback|weighted|lowest_latency|manual_fixed
+	// Local — выходить с самой входной ноды, не пряча трафик в туннель.
+	// Нужно, когда провайдер входа сайт не режет, а география входа и есть
+	// нужная: лишний переход только добавляет задержку. Если у сервиса есть и
+	// Targets, они остаются запасным путём на случай отказа прямого выхода.
+	Local         bool           `json:"local,omitempty"`
 	Targets       []EgressTarget `json:"targets"`
 	FailThreshold int            `json:"fail_threshold"`
 	RiseThreshold int            `json:"rise_threshold"`
