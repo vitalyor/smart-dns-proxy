@@ -65,6 +65,7 @@ type NodeInput struct {
 	PublicIPv6    string
 	RelayEndpoint string
 	RelaySNI      string
+	Country       string
 	Eligible      bool
 }
 
@@ -120,6 +121,9 @@ func Compile(in Input) (*Output, error) {
 		nodes[n.ID] = n
 	}
 
+	if err := detectCountryClash(in.Services, in.Nodes); err != nil {
+		return nil, err
+	}
 	if err := detectConflicts(in.Services); err != nil {
 		return nil, err
 	}
@@ -314,6 +318,117 @@ func servicesForIngress(all []model.Service, nodeID string, inputs []ServiceInpu
 		}
 	}
 	return out
+}
+
+// detectCountryClash не даёт собрать ревизию, если два сервиса делят домен, а
+// выходят из разных стран.
+//
+// Домен принадлежит ровно одному сервису — по длине совпадения, — поэтому общий
+// хост вроде challenges.cloudflare.com уйдёт в страну одного сервиса и для
+// второго окажется чужим. Для проверки «вы не робот» или отпечатка устройства
+// это значит, что сайт видит страницу из одной страны, а подтверждение из
+// другой. Ломается это молча и через раз, поэтому ловим на сборке.
+//
+// Регулярные и отрицательные правила пропускаем: пересечение регулярного
+// выражения с суффиксом достоверно не вычислить, а гадать здесь нельзя.
+func detectCountryClash(services []ServiceInput, nodes []NodeInput) error {
+	country := map[string]string{}
+	for _, n := range nodes {
+		if n.Role == "egress" {
+			country[n.ID] = n.Country
+		}
+	}
+	// Страна сервиса. Ноды выхода одного сервиса уже обязаны быть из одной
+	// страны, так что берём первую.
+	svcCountry := map[string]string{}
+	for _, s := range services {
+		for _, m := range s.EgressMembers {
+			if c, ok := country[m.NodeID]; ok {
+				svcCountry[s.Slug] = c
+				break
+			}
+		}
+	}
+
+	// Кто владеет каждым точным значением, и отдельно — какие суффиксы заявлены.
+	owner := map[string]string{}
+	suffixes := map[string]string{}
+	for _, s := range services {
+		for _, e := range s.Entries {
+			if e.Kind != domainset.KindExact && e.Kind != domainset.KindSuffix {
+				continue
+			}
+			if _, seen := owner[e.Value]; !seen {
+				owner[e.Value] = s.Slug
+			}
+			if e.Kind == domainset.KindSuffix {
+				if _, seen := suffixes[e.Value]; !seen {
+					suffixes[e.Value] = s.Slug
+				}
+			}
+		}
+	}
+
+	type clash struct{ domain, a, b, ca, cb string }
+	var found []clash
+	seen := map[string]bool{}
+	note := func(domain, a, b string) {
+		ca, cb := svcCountry[a], svcCountry[b]
+		if a == b || ca == cb {
+			return
+		}
+		key := domain + "|" + a + "|" + b
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		found = append(found, clash{domain, a, b, orUnknown(ca), orUnknown(cb)})
+	}
+
+	for _, s := range services {
+		for _, e := range s.Entries {
+			if e.Kind != domainset.KindExact && e.Kind != domainset.KindSuffix {
+				continue
+			}
+			// Тот же самый хост заявлен другим сервисом.
+			if o, ok := owner[e.Value]; ok {
+				note(e.Value, s.Slug, o)
+			}
+			// Хост попадает под суффикс другого сервиса: grok.x.com внутри x.com.
+			for rest := e.Value; ; {
+				i := strings.IndexByte(rest, '.')
+				if i < 0 {
+					break
+				}
+				rest = rest[i+1:]
+				if o, ok := suffixes[rest]; ok {
+					note(e.Value+" (внутри "+rest+")", s.Slug, o)
+				}
+			}
+		}
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].domain < found[j].domain })
+	var parts []string
+	for i, c := range found {
+		if i == 5 {
+			parts = append(parts, fmt.Sprintf("… и ещё %d", len(found)-5))
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s (%s) и %s (%s)", c.domain, c.a, c.ca, c.b, c.cb))
+	}
+	return fmt.Errorf("общий домен у сервисов из разных стран — %s. "+
+		"Общий хост уходит в страну одного сервиса, и для второго страница и подтверждение личности окажутся из разных стран. "+
+		"Переведите эти сервисы в одну страну либо разведите домены", strings.Join(parts, "; "))
+}
+
+func orUnknown(c string) string {
+	if c == "" {
+		return "страна не указана"
+	}
+	return c
 }
 
 func detectConflicts(services []ServiceInput) error {

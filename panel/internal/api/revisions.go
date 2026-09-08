@@ -165,6 +165,7 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 			ID: n.ID, Name: n.Name, Role: n.Role,
 			PublicIPv4: deref(n.PublicIPv4), PublicIPv6: deref(n.PublicIPv6),
 			RelayEndpoint: deref(n.RelayEndpoint), RelaySNI: deref(n.RelaySNI),
+			Country:  n.Country,
 			Eligible: n.Status != "maintenance" && n.Status != "disabled" && n.Status != "unhealthy",
 		})
 	}
