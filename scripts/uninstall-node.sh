@@ -86,6 +86,13 @@ if command -v ufw >/dev/null; then
   [[ -n "$nums" ]] && ok "правила ufw, поставленные установщиком, сняты"
 fi
 
+# Разрешение низких портов ставилось ради наших контейнеров — снимаем.
+if [[ -f /etc/sysctl.d/99-smartdns.conf ]]; then
+  rm -f /etc/sysctl.d/99-smartdns.conf
+  sysctl -q -w net.ipv4.ip_unprivileged_port_start=1024 2>/dev/null || true
+  ok "низкие порты снова только для root"
+fi
+
 # Ingress мог забрать порт 53 у systemd-resolved. Возвращаем как было.
 if [[ -f /etc/systemd/resolved.conf.d/smartdns.conf ]]; then
   rm -f /etc/systemd/resolved.conf.d/smartdns.conf

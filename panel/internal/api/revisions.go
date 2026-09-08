@@ -254,7 +254,8 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 
 func (s *Server) dnsConfig(ctx context.Context) model.DNSConfig {
 	c := model.DNSConfig{
-		Upstream:     getSetting(ctx, s.DB, "dns_upstream", "unbound:53"),
+		// Контейнеры ноды работают в сети хоста, unbound виден на петле: 5335.
+		Upstream:     getSetting(ctx, s.DB, "dns_upstream", "127.0.0.1:5335"),
 		MinTTL:       30,
 		MaxTTL:       300,
 		BlockHTTPSRR: true,

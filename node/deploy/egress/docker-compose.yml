@@ -12,6 +12,11 @@ x-logging: &logging
 
 x-node-image: &node-image
   image: ghcr.io/vitalyor/smartdns-node:${SMARTDNS_VERSION:-0.4.0}
+  # Сеть хоста, а не публикация портов. Опубликованный порт Docker заворачивает
+  # своими правилами раньше цепочек ufw, и ufw на него не действует: команда
+  # выполняется, рапортует об успехе и не делает ничего. В сети хоста порты
+  # обычные хостовые, и ufw остаётся единственной точкой управления ими.
+  network_mode: host
   build:
     context: ../../..
     dockerfile: node/deploy/Dockerfile
@@ -37,11 +42,9 @@ services:
       <<: *node-env
       NODE_ROLE: egress
       NODE_BUNDLE: ${NODE_BUNDLE:?NODE_BUNDLE is required — copy it from the panel}
-      MGMT_ADDR: ":3333"
-      METRICS_ADDR: 0.0.0.0:9104
-    ports:
-      # The panel connects here. Open ONLY to the panel IP in the firewall.
-      - "${MGMT_BIND:-3333}:3333"
+      MGMT_ADDR: "${MGMT_BIND_ADDR:-}:${MGMT_BIND:-3333}"
+      # Метрики только на петле: в сети хоста 0.0.0.0 означало бы «наружу».
+      METRICS_ADDR: 127.0.0.1:9104
     volumes:
       - agentstate:/var/lib/smartdns-agent
     healthcheck:
@@ -58,12 +61,10 @@ services:
     entrypoint: ["/usr/local/bin/egress-relay"]
     environment:
       <<: *node-env
-      RELAY_ADDR: ":8443"
-      METRICS_ADDR: 0.0.0.0:9103
+      RELAY_ADDR: "${RELAY_BIND_ADDR:-}:${RELAY_PORT:-8443}"
+      METRICS_ADDR: 127.0.0.1:9103
     volumes:
       - agentstate:/var/lib/smartdns-agent:ro
-    ports:
-      - "${RELAY_BIND:-0.0.0.0}:${RELAY_PORT:-8443}:8443/tcp"
 
 volumes:
   agentstate:
