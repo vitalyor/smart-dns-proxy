@@ -6,7 +6,7 @@ import {
 } from "../ui";
 
 type Role = "ingress" | "egress";
-import { IconPlus, IconRefresh, IconShield, IconSliders, IconTrash } from "../icons";
+import { IconLayers, IconPlus, IconRefresh, IconShield, IconSliders, IconTrash } from "../icons";
 import { COUNTRIES, countryName, flagOf } from "../countries";
 
 type Node = {
@@ -30,6 +30,7 @@ export default function Nodes() {
   const [removing, setRemoving] = useState<Node | null>(null);
   const [editing, setEditing] = useState<Node | null>(null);
   const [certNode, setCertNode] = useState<Node | null>(null);
+  const [svcNode, setSvcNode] = useState<Node | null>(null);
   const toast = useToast();
 
 
@@ -153,6 +154,9 @@ export default function Nodes() {
                           </td>
                           <td className="actions">
                             <button className="btn sm ghost" onClick={() => setEditing(n)}>Изменить</button>
+                            <button className="btn sm ghost icon" title="Сервисы через эту ноду"
+                              aria-label={`Сервисы ноды ${n.name}`}
+                              onClick={() => setSvcNode(n)}><IconLayers /></button>
                             {n.role === "ingress" && (
                               <button className="btn sm ghost icon" title="Сертификат резолвера"
                                 aria-label={`Сертификат ноды ${n.name}`}
@@ -241,6 +245,11 @@ export default function Nodes() {
       {certNode && (
         <CertModal node={certNode} onClose={() => setCertNode(null)}
           onIssued={() => nodes.reload()} />
+      )}
+
+      {svcNode && (
+        <NodeServicesModal node={svcNode} onClose={() => setSvcNode(null)}
+          onSaved={() => { setSvcNode(null); nodes.reload(); }} />
       )}
     </>
   );
@@ -602,5 +611,91 @@ function CountrySelect({ value, onChange }: { value: string; onChange: (v: strin
         ))}
       </select>
     </div>
+  );
+}
+
+// Сервисы, которые ходят через ноду. Тот же список, что в карточке сервиса, но
+// с другой стороны: заводя ноду, удобнее отметить её сервисы разом.
+type SvcRow = {
+  id: string; name: string; enabled: boolean;
+  nodes: { id: string; role: string; country: string; name: string }[];
+};
+
+function NodeServicesModal({ node, onClose, onSaved }: {
+  node: Node; onClose: () => void; onSaved: () => void;
+}) {
+  const list = useAsync<{ items: SvcRow[] }>(() => api("/services"), []);
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const toast = useToast();
+
+  const items = list.data?.items ?? [];
+  // Первая отрисовка после загрузки: отмечаем то, что уже привязано.
+  const current = picked ?? items.filter((s) => s.nodes.some((n) => n.id === node.id)).map((s) => s.id);
+
+  // Страна сервиса по его нодам выхода. Если она чужая, ноду туда добавить
+  // нельзя: отказ основной ноды увёл бы трафик в другую страну.
+  const blockedBy = (s: SvcRow): string | null => {
+    if (node.role !== "egress") return null;
+    const other = s.nodes.filter((n) => n.role === "egress" && n.id !== node.id);
+    const cc = [...new Set(other.map((n) => n.country || "?"))];
+    if (cc.length === 0) return null;
+    if (cc.length === 1 && cc[0] === (node.country || "?")) return null;
+    return cc.map((c) => countryName(c) || "без страны").join(", ");
+  };
+
+  const toggle = (id: string) =>
+    setPicked(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
+
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      await api(`/nodes/${node.id}/services`, { method: "PUT", body: { service_ids: current } });
+      toast({ kind: "ok", title: "Сервисы ноды сохранены",
+        body: "Соберите и выкатите конфигурацию, чтобы изменение доехало до нод." });
+      onSaved();
+    } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal title={`Сервисы через ${node.name}`} onClose={onClose} wide footer={
+      <>
+        <span className="tiny dim">отмечено: {current.length}</span>
+        <div className="spacer" />
+        <button className="btn" onClick={onClose}>Отмена</button>
+        <button className="btn primary" onClick={save} disabled={busy || list.loading}>
+          {busy ? <span className="spin" /> : null}Сохранить
+        </button>
+      </>
+    }>
+      <Notice kind="info" title={node.role === "egress" ? "Через какие сервисы выходит эта нода" : "Какие сервисы принимает эта нода"}>
+        {node.role === "egress"
+          ? "Ноды выхода одного сервиса должны быть из одной страны — сервисы, уже привязанные к другой стране, отмечены и недоступны."
+          : "Адреса отмеченных нод входа уходят в ответ DNS для этих сервисов."}
+      </Notice>
+      {error && <Notice kind="bad" title="Не сохранилось">{error}</Notice>}
+      {list.loading ? <Spinner /> : (
+        <div className="picklist">
+          {items.map((s) => {
+            const blocked = blockedBy(s);
+            const on = current.includes(s.id);
+            return (
+              <label key={s.id} className={`pick${on ? " on" : ""}${blocked ? " disabled" : ""}`}>
+                <input type="checkbox" checked={on} disabled={!!blocked} onChange={() => toggle(s.id)} />
+                <span className="pick-name">{s.name}</span>
+                {!s.enabled && <span className="tiny dim">выключен</span>}
+                <span className="spacer" />
+                {blocked
+                  ? <span className="tiny" style={{ color: "var(--warn)" }}>уже через {blocked}</span>
+                  : <span className="tiny dim">
+                      {s.nodes.filter((n) => n.role === "egress").map((n) => flagOf(n.country)).join(" ")}
+                    </span>}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
   );
 }

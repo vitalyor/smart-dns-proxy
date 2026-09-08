@@ -786,3 +786,8 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .searchbar { display: flex; gap: 8px; align-items: center; padding: 14px 18px; }
 .searchbar .input { flex: 1; }
 .searchnote { padding: 0 18px 14px; }
+
+/* список выбора в модалке: прокручивается сам, а не растит окно */
+.picklist { max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.pick.disabled { opacity: .55; cursor: not-allowed; }
+.pick.disabled input { cursor: not-allowed; }
