@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -104,6 +105,12 @@ func (p *Proxy) lookup(host string) *svcRoute {
 		}
 	}
 	return best
+}
+
+func (p *Proxy) config() *model.NodeConfig {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.cfg
 }
 
 func (p *Proxy) settings() model.IngressConfig {
@@ -212,7 +219,7 @@ func (p *Proxy) handle(c net.Conn) {
 	// режет: туннель до заграничного выхода добавил бы только задержку. Если
 	// прямой выход не удался, а запасные ноды у сервиса есть, идём в туннель.
 	if route.svc.Egress.Local {
-		up, err = dialDirect(host, port, timeout)
+		up, err = dialDirect(p.directResolver(), host, port, timeout)
 		if err != nil {
 			mConn.Inc("service", route.svc.Slug, "result", "local_failed")
 			slog.Warn("direct exit failed", "service", route.svc.Slug, "err", err)
@@ -254,19 +261,56 @@ func exitLabel(t *target) string {
 // Единственная тонкость — петля. Имя сервиса на этой же ноде разрешается в её
 // собственный адрес, и соединение вернулось бы в этот же прокси, а тот снова
 // набрал бы сам себя — до конца сокетов. Поэтому сверяем, куда попали.
-func dialDirect(host string, port int, timeout time.Duration) (net.Conn, error) {
-	d := &net.Dialer{Timeout: timeout}
-	c, err := d.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+func dialDirect(res *net.Resolver, host string, port int, timeout time.Duration) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	ips, err := res.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, err
 	}
-	ra, aok := c.RemoteAddr().(*net.TCPAddr)
-	la, bok := c.LocalAddr().(*net.TCPAddr)
-	if aok && bok && ra.IP.Equal(la.IP) {
-		_ = c.Close()
-		return nil, fmt.Errorf("прямой выход ведёт на саму ноду (%s): имя разрешается в её адрес", ra.IP)
+	d := &net.Dialer{Timeout: timeout}
+	var lastErr error
+	for _, ip := range ips {
+		c, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip.IP.String(), strconv.Itoa(port)))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		ra, aok := c.RemoteAddr().(*net.TCPAddr)
+		la, bok := c.LocalAddr().(*net.TCPAddr)
+		if aok && bok && ra.IP.Equal(la.IP) {
+			_ = c.Close()
+			lastErr = fmt.Errorf("прямой выход ведёт на саму ноду (%s): имя разрешается в её адрес", ra.IP)
+			continue
+		}
+		return c, nil
 	}
-	return c, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("имя %s не разрешилось ни в один адрес", host)
+	}
+	return nil, lastErr
+}
+
+// directResolver — чем прокси разрешает имена при прямом выходе.
+//
+// Берём тот же рекурсивный резолвер, что обслуживает DNS-часть ноды. Резолвер
+// провайдера, прописанный в системе, отвечал «server misbehaving» на живые
+// имена, и прямой выход падал на ровном месте. Свой unbound рядом, на петле.
+func (p *Proxy) directResolver() *net.Resolver {
+	up := ""
+	if cfg := p.config(); cfg != nil {
+		up = cfg.DNS.Upstream
+	}
+	if up == "" {
+		return net.DefaultResolver
+	}
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "udp", up)
+		},
+	}
 }
 
 // dohForward tunnels a DoH-hostname ClientHello to the local DoH listener. It

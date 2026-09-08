@@ -5,6 +5,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"errors"
 	"net"
 	"sort"
 	"sync"
@@ -184,6 +185,11 @@ func (p *pool) dial(tlsCfg *tls.Config, host string, port int, timeout time.Dura
 		}
 		t.observe(false, time.Since(start), fail, rise)
 		mTunnel.Inc("egress", t.Name, "result", "fail")
+	}
+	// Пустой список целей — это не «всё получилось». Без этой ветки dial
+	// возвращал nil-соединение и nil-ошибку, и вызывающий писал в пустоту.
+	if lastErr == nil {
+		lastErr = errors.New("у сервиса нет ни одной ноды выхода")
 	}
 	return nil, nil, lastErr
 }

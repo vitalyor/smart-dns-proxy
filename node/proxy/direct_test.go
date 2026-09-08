@@ -4,6 +4,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"smartdns/shared/model"
 )
 
 // Прямой выход обязан отказаться соединяться сам с собой. Иначе имя сервиса,
@@ -27,7 +29,7 @@ func TestDialDirectRefusesLoop(t *testing.T) {
 
 	port := ln.Addr().(*net.TCPAddr).Port
 	// Обе стороны на петлевом адресе — ровно тот случай, что надо отбить.
-	if c, err := dialDirect("127.0.0.1", port, time.Second); err == nil {
+	if c, err := dialDirect(net.DefaultResolver, "127.0.0.1", port, time.Second); err == nil {
 		_ = c.Close()
 		t.Fatal("соединение с самой собой должно быть отвергнуто")
 	}
@@ -43,7 +45,7 @@ func TestDialDirectFailsFast(t *testing.T) {
 	_ = ln.Close()
 
 	start := time.Now()
-	if c, err := dialDirect("127.0.0.1", port, time.Second); err == nil {
+	if c, err := dialDirect(net.DefaultResolver, "127.0.0.1", port, time.Second); err == nil {
 		_ = c.Close()
 		t.Fatal("ожидалась ошибка соединения")
 	}
@@ -62,5 +64,22 @@ func TestExitLabelHandlesNilTarget(t *testing.T) {
 	tg.Name = "egress-us"
 	if got := exitLabel(tg); got != "egress-us" {
 		t.Fatalf("ожидалось имя ноды, получено %q", got)
+	}
+}
+
+// Пустой список нод выхода обязан быть ошибкой. Раньше dial возвращал разом
+// nil-соединение и nil-ошибку, вызывающий считал это удачей и писал в пустоту —
+// прокси падал, а вместе с ним ложился весь вход, не только этот сервис.
+func TestDialWithoutTargetsErrors(t *testing.T) {
+	po := newPool(model.EgressPolicy{}, nil)
+	c, tg, err := po.dial(nil, "example.com", 443, time.Second)
+	if err == nil {
+		if c != nil {
+			_ = c.Close()
+		}
+		t.Fatal("ожидалась ошибка, получен успех без соединения")
+	}
+	if c != nil || tg != nil {
+		t.Fatal("при ошибке ни соединения, ни цели быть не должно")
 	}
 }
