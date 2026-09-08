@@ -51,3 +51,16 @@ func TestDialDirectFailsFast(t *testing.T) {
 		t.Fatalf("набор висел %s вместо быстрого отказа", d)
 	}
 }
+
+// Журнальная метка не должна разыменовывать пустую цель: при прямом выходе
+// ноды-цели нет, а аргументы slog вычисляются независимо от уровня журнала.
+func TestExitLabelHandlesNilTarget(t *testing.T) {
+	if got := exitLabel(nil); got == "" {
+		t.Fatal("метка пустая")
+	}
+	tg := &target{}
+	tg.Name = "egress-us"
+	if got := exitLabel(tg); got != "egress-us" {
+		t.Fatalf("ожидалось имя ноды, получено %q", got)
+	}
+}
