@@ -777,5 +777,6 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 .pick-name { font-weight: 550; }
 .pick .badge { margin-left: 0; }
 
-/* маршрут в списке сервисов: флаги и имена нод в одну строку */
-.route-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+/* маршрут в списке сервисов: вход сверху, выход снизу */
+.route-cell { display: flex; flex-direction: column; gap: 2px; }
+.route-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }

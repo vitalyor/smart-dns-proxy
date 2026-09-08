@@ -206,7 +206,14 @@ function RouteCell({ nodes }: { nodes: NodeRow[] }) {
     rows.length === 0 ? <span className="dim">—</span>
       : rows.map((n) => <span key={n.id} className="mono" title={countryName(n.country)}>{flagOf(n.country)} {n.name}</span>)
           .reduce((a, b) => <>{a}<span className="dim">, </span>{b}</>);
-  return <div className="route-cell">{line(part("ingress"))}<span className="dim"> → </span>{line(part("egress"))}</div>;
+  // Стрелка вниз, а не вправо: вход и выход стоят строками друг под другом,
+  // и стрелка вправо повисала в конце первой строки, указывая в пустоту.
+  return (
+    <div className="route-cell">
+      <div className="route-row">{line(part("ingress"))}</div>
+      <div className="route-row"><span className="dim">↓</span> {line(part("egress"))}</div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
