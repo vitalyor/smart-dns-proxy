@@ -233,11 +233,20 @@ func (p *Proxy) handle(c net.Conn) {
 		return
 	}
 	mConn.Inc("service", route.svc.Slug, "result", "ok")
-	slog.Debug("proxying", "service", route.svc.Slug, "sni", host, "port", port, "egress", tgt.Name)
+	slog.Debug("proxying", "service", route.svc.Slug, "sni", host, "port", port, "egress", exitLabel(tgt))
 	a2b, b2a := tunnel.Splice(c, up, time.Duration(st.IdleTimeoutSec)*time.Second)
 	mBytes.Add(a2b+int64(len(raw)), "service", route.svc.Slug, "direction", "up")
 	mBytes.Add(b2a, "service", route.svc.Slug, "direction", "down")
-	_ = tgt
+}
+
+// exitLabel называет путь наружу для журнала. При прямом выходе ноды-цели нет,
+// а аргументы slog вычисляются всегда, даже когда уровень отладки выключен:
+// tgt.Name на пустой цели ронял процесс на каждом таком соединении.
+func exitLabel(t *target) string {
+	if t == nil {
+		return "прямой выход"
+	}
+	return t.Name
 }
 
 // dialDirect выходит в интернет прямо с входной ноды, без туннеля.
