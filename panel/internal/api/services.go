@@ -53,6 +53,59 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// searchServices отвечает на вопрос «какой сервис отвечает за этот домен».
+//
+// Ищем по правилам активной версии, а не по ручному списку сервиса: у части
+// сервисов домены приходят из источников и регулярок, и поиск по ручному
+// списку молчал бы там, где совпадение есть.
+//
+// Два вида совпадения. Подстрока — чтобы «goog» показывал всё гугловое. И
+// обратное вхождение: запрос «www.google.com» должен находить сервис, где
+// записан «google.com», потому что домен покрывает поддомены. Без второго
+// поиск отвечал бы «никто не обслуживает» ровно там, где обслуживает.
+func (s *Server) searchServices(w http.ResponseWriter, r *http.Request) error {
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	q = strings.TrimPrefix(q, "*.")
+	q = strings.Trim(q, ".")
+	if len([]rune(q)) < 2 {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		return nil
+	}
+	// % и _ — подстановочные знаки LIKE: без экранирования «_» совпадал бы с
+	// любым символом, а «%» — с любым остатком.
+	esc := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(q)
+	// Обратное вхождение имеет смысл только для похожего на имя хоста запроса.
+	host := ""
+	if validHostname(q) {
+		host = q
+	}
+	type row struct {
+		ID      string   `db:"id" json:"id"`
+		Name    string   `db:"name" json:"name"`
+		Slug    string   `db:"slug" json:"slug"`
+		Matched []string `db:"matched" json:"matched"`
+		Total   int      `db:"total" json:"total"`
+	}
+	rows, err := store.Many[row](r.Context(), s.DB, `
+		SELECT sv.id::text, sv.name, sv.slug,
+		       (array_agg(DISTINCT re.value))[1:8] AS matched,
+		       count(DISTINCT re.value)::int AS total
+		FROM services sv
+		JOIN rule_sets rs ON rs.id = sv.rule_set_id
+		JOIN rule_entries re ON re.version_id = rs.active_version_id
+		WHERE re.kind IN ('exact','suffix','regex')
+		  AND (re.value LIKE '%' || $1 || '%' ESCAPE '\'
+		       OR ($2 <> '' AND re.kind IN ('exact','suffix')
+		           AND ($2 = re.value OR $2 LIKE '%.' || re.value)))
+		GROUP BY sv.id, sv.name, sv.slug
+		ORDER BY sv.name`, esc, host)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": rows})
+	return nil
+}
+
 type serviceRequest struct {
 	Name         string         `json:"name"`
 	Slug         string         `json:"slug"`

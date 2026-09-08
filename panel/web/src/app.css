@@ -780,3 +780,8 @@ textarea.input, textarea.textarea { resize: vertical; max-width: 100%; width: 10
 /* маршрут в списке сервисов: вход сверху, выход снизу */
 .route-cell { display: flex; flex-direction: column; gap: 2px; }
 .route-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+
+/* поиск сервиса по домену */
+.searchbar { display: flex; gap: 8px; align-items: center; padding: 14px 18px; }
+.searchbar .input { flex: 1; }
+.searchnote { padding: 0 18px 14px; }

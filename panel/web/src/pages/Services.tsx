@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, idemKey, shortHash } from "../api";
 import { Card, Confirm, ErrorState, Field, Modal, Notice, Segmented, Spinner, errText, useAsync, useToast } from "../ui";
 import { IconPlus, IconRefresh, IconTrash } from "../icons";
@@ -15,6 +15,7 @@ type Service = {
 };
 type Named = { id: string; name: string };
 type NodeRow = { id: string; name: string; role: string; country: string; status: string };
+type SearchHit = { id: string; name: string; slug: string; matched: string[]; total: number };
 
 // Страны выходных нод в выборе. Больше одной — сервис нельзя сохранить: отказ
 // основной ноды увёл бы трафик в другую страну под тем же аккаунтом.
@@ -81,6 +82,19 @@ type CatalogItem = { slug: string; name: string; preset: string; probe_host: str
 
 export default function Services() {
   const list = useAsync<{ items: Service[] }>(() => api("/services"), []);
+  // Запрос уходит не на каждую букву: пока набирают «google.com», это одиннадцать
+  // запросов вместо одного.
+  const [query, setQuery] = useState("");
+  const [typed, setTyped] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(typed.trim()), 250);
+    return () => clearTimeout(t);
+  }, [typed]);
+  const found = useAsync<{ items: SearchHit[] }>(
+    () => (query.length < 2
+      ? Promise.resolve({ items: [] })
+      : api(`/services/search?q=${encodeURIComponent(query)}`)),
+    [query]);
   const rules = useAsync<{ items: Named[] }>(() => api("/rule-sets"), []);
   const nodesReq = useAsync<{ items: NodeRow[] }>(() => api("/nodes"), []);
   const [editing, setEditing] = useState<Service | null>(null);
@@ -89,6 +103,10 @@ export default function Services() {
   const toast = useToast();
 
   const nodes = (nodesReq.data?.items ?? []).filter((n) => n.status !== "disabled");
+  const hits = found.data?.items ?? [];
+  const hitOf = (id: string) => (query.length >= 2 ? hits.find((h) => h.id === id) : undefined);
+  const all = list.data?.items ?? [];
+  const shown = query.length >= 2 ? all.filter((s) => hits.some((h) => h.id === s.id)) : all;
 
   return (
     <>
@@ -104,8 +122,25 @@ export default function Services() {
         они должны быть из одной страны, иначе сайт увидит переезд аккаунта.
       </Notice>
 
+      <Card tight>
+        <div className="searchbar">
+          <input className="input" value={typed} placeholder="Поиск по домену: netflix.com, www.google.com, goog…"
+            aria-label="Поиск сервиса по домену"
+            onChange={(e) => setTyped(e.target.value)} />
+          {typed && <button className="btn sm ghost" onClick={() => setTyped("")}>Сбросить</button>}
+        </div>
+        {query.length >= 2 && !found.loading && (
+          <div className="searchnote tiny dim">
+            {hits.length === 0
+              ? `Ни один сервис не обслуживает «${query}» — этот домен пойдёт напрямую.`
+              : `Нашлось сервисов: ${hits.length}. Домен обслуживает тот, чьё совпадение длиннее.`}
+          </div>
+        )}
+      </Card>
+
       {list.error ? <ErrorState message={list.error} onRetry={list.reload} />
         : list.loading ? <Spinner />
+        : shown.length === 0 && query.length >= 2 ? null
         : list.data!.items.length === 0 ? (
           <Card>
             <div className="empty">
@@ -127,11 +162,17 @@ export default function Services() {
                     <th>Порты</th><th>Приоритет</th><th>Состояние</th><th /></tr>
                 </thead>
                 <tbody>
-                  {list.data!.items.map((s) => (
+                  {shown.map((s) => (
                     <tr key={s.id}>
                       <td>
                         <div style={{ fontWeight: 550 }}>{s.name}</div>
                         <div className="tiny dim mono">{s.slug}</div>
+                        {hitOf(s.id) && (
+                          <div className="tiny mono" style={{ color: "var(--accent)", marginTop: 2 }}>
+                            {hitOf(s.id)!.matched.slice(0, 3).join(", ")}
+                            {hitOf(s.id)!.total > 3 ? ` и ещё ${hitOf(s.id)!.total - 3}` : ""}
+                          </div>
+                        )}
                         {!s.probe_in_set && (
                           <div className="tiny" style={{ color: "var(--warn)", marginTop: 2 }}
                             title="Проба всегда будет падать: этот домен не входит в набор">
