@@ -35,6 +35,7 @@ func main() {
 		acmeHTTP    = flag.String("acme-http", env("ACME_HTTP_ADDR", ":80"), "address the HTTP-01 challenge binds during issuance, then closes")
 		dnsCountURL = flag.String("dns-counters-url", env("DNS_COUNTERS_URL", ""), "internal URL of the dns-frontend per-device counters (empty disables)")
 		dnsLogURL   = flag.String("dns-log-url", env("DNS_LOG_URL", ""), "internal URL of the dns-frontend live query log (ingress only, e.g. http://dns-frontend:9053/log)")
+		connLogURL  = flag.String("conn-log-url", env("CONN_LOG_URL", ""), "internal URL of the sni-proxy live connection log (ingress only, e.g. http://127.0.0.1:9102/log)")
 		metrAddr    = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9104"), "Prometheus metrics address")
 		showVer     = flag.Bool("version", false, "print version and exit")
 	)
@@ -48,7 +49,7 @@ func main() {
 	a, err := agentcore.New(agentcore.Config{
 		StateDir: *stateDir, ListenAddr: *listen, Role: *role,
 		KeepRevisions: 3, Level: level,
-		TLSDir: *tlsDir, ACMEHTTPAddr: *acmeHTTP, DNSLogURL: *dnsLogURL, DNSCountersURL: *dnsCountURL,
+		TLSDir: *tlsDir, ACMEHTTPAddr: *acmeHTTP, DNSLogURL: *dnsLogURL, DNSCountersURL: *dnsCountURL, ConnLogURL: *connLogURL,
 	})
 	if err != nil {
 		fatal("agent init: %v", err)

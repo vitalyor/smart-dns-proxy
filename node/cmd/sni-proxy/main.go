@@ -67,6 +67,9 @@ func main() {
 	if *metrAddr != "" {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", metrics.Handler())
+		// Живой журнал соединений. Адрес петлевой (см. METRICS_ADDR): в нём
+		// имена сайтов и адреса устройств, наружу ему нельзя.
+		mux.HandleFunc("/log", p.LogHandler())
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/plain")
 			_, _ = w.Write([]byte(p.Status()))

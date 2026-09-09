@@ -61,6 +61,9 @@ services:
       DNS_LOG_URL: http://127.0.0.1:9053/log
       # Per-device tallies (how many queries, when last seen). No domains.
       DNS_COUNTERS_URL: http://127.0.0.1:9053/counters
+      # Живой журнал соединений от sni-proxy (GET /v1/conn/log). Пишется только
+      # при уровне логов ноды debug, в остальное время отвечает enabled:false.
+      CONN_LOG_URL: http://127.0.0.1:9102/log
     volumes:
       - agentstate:/var/lib/smartdns-agent
       # Writable so the agent can drop issued certs here for dns-frontend.

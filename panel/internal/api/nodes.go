@@ -298,6 +298,31 @@ func (s *Server) nodeMaintenance(w http.ResponseWriter, r *http.Request) error {
 // nodeDNSLog streams a node's live query log to the panel UI. It forwards the
 // raw JSON from the node (which carries the incremental ?after cursor) so the
 // browser can poll cheaply.
+// nodeConnLog отдаёт живой журнал соединений входной ноды. В отличие от
+// журнала DNS он показывает не «какое имя спросили», а «куда в итоге ушли»:
+// одного вопроса к DNS хватает на сотни запросов по уже открытому соединению,
+// поэтому без этой ленты происходящее видно только наполовину.
+func (s *Server) nodeConnLog(w http.ResponseWriter, r *http.Request) error {
+	if s.Cfg.Pusher == nil {
+		return fmt.Errorf("push client is not configured on this panel")
+	}
+	var after uint64
+	if v := r.URL.Query().Get("after"); v != "" {
+		after, _ = strconv.ParseUint(v, 10, 64)
+	}
+	t, err := s.targetFor(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	raw, err := s.Cfg.Pusher.FetchConnLog(r.Context(), t, after)
+	if err != nil {
+		return fmt.Errorf("нода недоступна: %w", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(raw)
+	return nil
+}
+
 func (s *Server) nodeDNSLog(w http.ResponseWriter, r *http.Request) error {
 	if s.Cfg.Pusher == nil {
 		return fmt.Errorf("push client is not configured on this panel")

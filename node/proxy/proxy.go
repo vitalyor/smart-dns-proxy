@@ -45,6 +45,10 @@ type Proxy struct {
 	maxSess    int64
 	dohHost    string // SNI of the local DoH server, forwarded to dohBackend on :443
 	dohBackend string // where the DoH listener lives, e.g. "dns-frontend:8443"
+	// debug включает журнал соединений. Идёт от панели (уровень логов ноды),
+	// потому что содержимое журнала — метаданные о том, что человек смотрит.
+	debug   bool
+	connLog *connRing
 }
 
 // SetDoHBackend lets connections whose SNI equals the DoH hostname be forwarded
@@ -58,7 +62,7 @@ func (p *Proxy) SetDoHBackend(addr string) {
 // New builds a proxy. tlsCfg must carry the node's client certificate so the
 // egress relay can authenticate this ingress.
 func New(c *model.NodeConfig, tlsCfg *tls.Config) *Proxy {
-	p := &Proxy{tlsCfg: tlsCfg}
+	p := &Proxy{tlsCfg: tlsCfg, connLog: newConnRing(1000)}
 	p.Apply(c)
 	return p
 }
@@ -83,6 +87,7 @@ func (p *Proxy) Apply(c *model.NodeConfig) {
 		})
 	}
 	p.routes, p.cfg = routes, c
+	p.debug = strings.EqualFold(c.LogLevel, "debug")
 	p.dohHost = stripPort(c.DNS.DoHHostname)
 	p.maxSess = int64(c.Ingress.MaxSessions)
 	if p.maxSess <= 0 {
@@ -179,17 +184,24 @@ func (p *Proxy) handle(c net.Conn) {
 	mActive.Set(p.active.Load())
 
 	st := p.settings()
+	start := time.Now()
+	client := clientIP(c)
 	_ = c.SetReadDeadline(time.Now().Add(time.Duration(st.ClientHelloTimeoutMs) * time.Millisecond))
 	sni, raw, err := sniff.PeekSNI(c, st.MaxPreReadBytes)
 	_ = c.SetReadDeadline(time.Time{})
 	if err != nil {
-		mReject.Inc("reason", reasonOf(err))
+		reason := reasonOf(err)
+		mReject.Inc("reason", reason)
+		p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: sni,
+			Result: reason, MS: time.Since(start).Milliseconds()})
 		return
 	}
 	host, err := domainset.NormalizeHost(sni)
 	if err != nil {
 		// IP literals and malformed names are never proxied.
 		mReject.Inc("reason", "invalid_sni")
+		p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: sni,
+			Result: "invalid_sni", MS: time.Since(start).Milliseconds()})
 		return
 	}
 	route := p.lookup(host)
@@ -197,10 +209,14 @@ func (p *Proxy) handle(c net.Conn) {
 		// DoH shares :443 with managed HTTPS on a single IP: a ClientHello for
 		// the DoH hostname is forwarded verbatim to the local DoH listener.
 		if p.dohForward(c, host, raw) {
+			p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: host,
+				Service: "_doh", Result: "ok", MS: time.Since(start).Milliseconds()})
 			return
 		}
 		// This is the guard that stops the ingress being an open TCP proxy.
 		mReject.Inc("reason", "sni_not_managed")
+		p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: host,
+			Result: "sni_not_managed", MS: time.Since(start).Milliseconds()})
 		// The server name appears only at debug level: it is metadata about
 		// what a user is browsing, so it must not reach steady-state logs.
 		slog.Debug("rejected unmanaged SNI", "sni", host)
@@ -212,6 +228,8 @@ func (p *Proxy) handle(c net.Conn) {
 	}
 	if !portAllowed(route.svc.AllowedPorts, port) {
 		mReject.Inc("reason", "port_not_allowed")
+		p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: host, Port: port,
+			Service: route.svc.Slug, Result: "port_not_allowed", MS: time.Since(start).Milliseconds()})
 		return
 	}
 
@@ -233,6 +251,8 @@ func (p *Proxy) handle(c net.Conn) {
 		if err != nil {
 			mConn.Inc("service", route.svc.Slug, "result", "no_egress")
 			slog.Warn("no usable egress", "service", route.svc.Slug, "err", err)
+			p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: host, Port: port,
+				Service: route.svc.Slug, Result: "no_egress", MS: time.Since(start).Milliseconds()})
 			return
 		}
 	}
@@ -240,10 +260,16 @@ func (p *Proxy) handle(c net.Conn) {
 	if _, err := up.Write(raw); err != nil {
 		_ = up.Close()
 		mConn.Inc("service", route.svc.Slug, "result", "write_failed")
+		p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: host, Port: port,
+			Service: route.svc.Slug, Egress: exitLabel(tgt), Result: "write_failed",
+			MS: time.Since(start).Milliseconds()})
 		return
 	}
 	mConn.Inc("service", route.svc.Slug, "result", "ok")
 	slog.Debug("proxying", "service", route.svc.Slug, "sni", host, "port", port, "egress", exitLabel(tgt))
+	p.note(ConnEntry{TS: start.UnixMilli(), Client: client, SNI: host, Port: port,
+		Service: route.svc.Slug, Egress: exitLabel(tgt), Result: "ok",
+		MS: time.Since(start).Milliseconds()})
 	a2b, b2a := tunnel.Splice(c, up, time.Duration(st.IdleTimeoutSec)*time.Second)
 	mBytes.Add(a2b+int64(len(raw)), "service", route.svc.Slug, "direction", "up")
 	mBytes.Add(b2a, "service", route.svc.Slug, "direction", "down")

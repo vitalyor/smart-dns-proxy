@@ -29,17 +29,20 @@ var version = "dev"
 
 func main() {
 	var (
-		cfgPath    = flag.String("config", env("SMARTDNS_CONFIG", "/etc/smartdns/active/config.json"), "path to the active node config artifact")
-		udpAddr    = flag.String("udp", env("DNS_UDP_ADDR", ":53"), "plain DNS UDP listen address (empty disables)")
-		tcpAddr    = flag.String("tcp", env("DNS_TCP_ADDR", ":53"), "plain DNS TCP listen address (empty disables)")
-		dotAddr    = flag.String("dot", env("DNS_DOT_ADDR", ":853"), "DoT listen address (empty disables)")
-		dohAddr    = flag.String("doh", env("DNS_DOH_ADDR", ":8443"), "DoH HTTPS listen address (empty disables)")
-		dohPlain   = flag.String("doh-plain", env("DNS_DOH_PLAIN_ADDR", ""), "DoH plain HTTP listen address, for use behind a trusted TLS terminator")
-		dohPath    = flag.String("doh-path", env("DNS_DOH_PATH", "/dns-query"), "DoH base path")
-		certFile   = flag.String("cert", env("TLS_CERT_FILE", ""), "TLS certificate for DoT/DoH")
-		keyFile    = flag.String("key", env("TLS_KEY_FILE", ""), "TLS key for DoT/DoH")
-		metrAddr   = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9101"), "Prometheus metrics listen address")
-		logAddr    = flag.String("log-addr", env("DNS_LOG_ADDR", ":9053"), "internal HTTP address serving the live query log (reached by the node-agent only)")
+		cfgPath  = flag.String("config", env("SMARTDNS_CONFIG", "/etc/smartdns/active/config.json"), "path to the active node config artifact")
+		udpAddr  = flag.String("udp", env("DNS_UDP_ADDR", ":53"), "plain DNS UDP listen address (empty disables)")
+		tcpAddr  = flag.String("tcp", env("DNS_TCP_ADDR", ":53"), "plain DNS TCP listen address (empty disables)")
+		dotAddr  = flag.String("dot", env("DNS_DOT_ADDR", ":853"), "DoT listen address (empty disables)")
+		dohAddr  = flag.String("doh", env("DNS_DOH_ADDR", ":8443"), "DoH HTTPS listen address (empty disables)")
+		dohPlain = flag.String("doh-plain", env("DNS_DOH_PLAIN_ADDR", ""), "DoH plain HTTP listen address, for use behind a trusted TLS terminator")
+		dohPath  = flag.String("doh-path", env("DNS_DOH_PATH", "/dns-query"), "DoH base path")
+		certFile = flag.String("cert", env("TLS_CERT_FILE", ""), "TLS certificate for DoT/DoH")
+		keyFile  = flag.String("key", env("TLS_KEY_FILE", ""), "TLS key for DoT/DoH")
+		metrAddr = flag.String("metrics", env("METRICS_ADDR", "127.0.0.1:9101"), "Prometheus metrics listen address")
+		// Петля намеренно: в этом журнале имена сайтов и токены устройств, а
+		// ходит к нему только агент с той же машины. Раньше здесь было ":9053"
+		// — слушатель на всех интерфейсах, прикрытый одним лишь фаерволом.
+		logAddr    = flag.String("log-addr", env("DNS_LOG_ADDR", "127.0.0.1:9053"), "internal HTTP address serving the live query log (reached by the node-agent only)")
 		accessPath = flag.String("access", env("SMARTDNS_ACCESS", "/var/lib/smartdns-agent/access.json"), "path to the DoH token set written by the agent")
 		showVer    = flag.Bool("version", false, "print version and exit")
 	)
