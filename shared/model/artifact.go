@@ -111,7 +111,6 @@ type DNSConfig struct {
 	MaxTTL       uint32    `json:"max_ttl"`
 	PublishAAAA  bool      `json:"publish_aaaa"`
 	BlockHTTPSRR bool      `json:"block_https_rr"`
-	LogQueries   bool      `json:"log_queries"`
 	DoHHostname  string    `json:"doh_hostname"`
 	DoTHostname  string    `json:"dot_hostname"`
 }

@@ -221,6 +221,23 @@ func (c *Client) FetchDNSLog(ctx context.Context, t Target, after uint64) ([]byt
 	return raw, nil
 }
 
+// FetchConnLog returns the node's live connection-log JSON (raw), passing the
+// incremental cursor through. Same shape and timeout as FetchDNSLog.
+func (c *Client) FetchConnLog(ctx context.Context, t Target, after uint64) ([]byte, error) {
+	path := "/v1/conn/log"
+	if after > 0 {
+		path += "?after=" + strconv.FormatUint(after, 10)
+	}
+	raw, code, err := c.doTimeout(ctx, t, http.MethodGet, path, nil, 6*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("node returned HTTP %d", code)
+	}
+	return raw, nil
+}
+
 // PushCert installs a certificate the panel obtained itself. One wildcard serves
 // the whole fleet, so this replaces per-node HTTP-01 issuance — and the zone
 // token that DNS-01 needs never leaves the panel (ADR 0012).

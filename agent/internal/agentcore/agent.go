@@ -53,6 +53,10 @@ type Config struct {
 	// DNSCountersURL is the sibling endpoint serving per-device tallies, proxied
 	// to the panel via GET /v1/dns/counters. Empty behaves the same way.
 	DNSCountersURL string
+	// ConnLogURL is the sni-proxy's internal connection-log URL, proxied to the
+	// panel via GET /v1/conn/log. Empty (e.g. on egress) makes that route report
+	// unavailability instead of failing.
+	ConnLogURL string
 }
 
 // Agent is the running node agent (an HTTPS server).
@@ -187,6 +191,7 @@ func (a *Agent) Serve(ctx context.Context) error {
 	mux.HandleFunc("POST /v1/cert/install", a.wrap(a.handleInstallCert))
 	mux.HandleFunc("GET /v1/dns/log", a.wrap(a.handleDNSLog))
 	mux.HandleFunc("GET /v1/dns/counters", a.wrap(a.handleDNSCounters))
+	mux.HandleFunc("GET /v1/conn/log", a.wrap(a.handleConnLog))
 
 	srv := &http.Server{
 		Addr:    a.cfg.ListenAddr,
