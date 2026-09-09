@@ -77,10 +77,13 @@ func (t *target) observe(ok bool, d time.Duration, fail, rise int) {
 type pool struct {
 	policy  model.EgressPolicy
 	targets []*target
+	// res — чей резолвер разрешает имена нод выхода. Пустой означает системный
+	// резолвер хоста, и полагаться на него нельзя: см. upstreamResolver.
+	res *net.Resolver
 }
 
-func newPool(p model.EgressPolicy, prev *pool) *pool {
-	po := &pool{policy: p}
+func newPool(p model.EgressPolicy, prev *pool, res *net.Resolver) *pool {
+	po := &pool{policy: p, res: res}
 	for _, t := range p.Targets {
 		nt := &target{EgressTarget: t, healthy: true}
 		if prev != nil {
@@ -133,7 +136,7 @@ func (p *pool) probe(tlsCfg *tls.Config, timeout time.Duration) {
 	fail, rise := p.thresholds()
 	for _, t := range p.targets {
 		start := time.Now()
-		d := &net.Dialer{Timeout: timeout}
+		d := &net.Dialer{Timeout: timeout, Resolver: p.res}
 		conn, err := d.Dial("tcp", t.Endpoint)
 		if err == nil {
 			c := tlsCfg.Clone()
@@ -158,7 +161,7 @@ func (p *pool) dial(tlsCfg *tls.Config, host string, port int, timeout time.Dura
 	var lastErr error
 	for _, t := range p.order() {
 		start := time.Now()
-		d := &net.Dialer{Timeout: timeout}
+		d := &net.Dialer{Timeout: timeout, Resolver: p.res}
 		raw, err := d.Dial("tcp", t.Endpoint)
 		if err == nil {
 			c := tlsCfg.Clone()
