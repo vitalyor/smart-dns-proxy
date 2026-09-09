@@ -1,0 +1,6 @@
+.git
+panel/web/node_modules
+panel/web/dist
+node_modules
+*.log
+.blackbox
