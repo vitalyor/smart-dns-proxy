@@ -184,6 +184,12 @@ if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active
     allow proto tcp to any port 853 comment 'SmartDNS: DoT'
     allow proto tcp to any port "$DOH_PORT" comment 'SmartDNS: DoH'
     ok "открыты 443, 853 и $DOH_PORT — устройствам"
+    # QUIC мы не обслуживаем, но молчать в ответ хуже, чем отказать. Браузер и
+    # приложение пробуют HTTP/3 первым; на тишину они ждут таймаута и только
+    # потом идут по TCP, и эта задержка платится на каждое новое соединение —
+    # на мобильной сети особенно дорого. Явный отказ виден сразу.
+    ufw reject 443/udp comment 'SmartDNS: QUIC не обслуживаем, отвечаем отказом чтобы клиент сразу шёл по TCP' >/dev/null 2>&1 || true
+    ok "UDP 443 отвечает отказом — клиент не ждёт таймаута HTTP/3"
   else
     if [[ -n "$INGRESS_IP" ]]; then
       allow from "$INGRESS_IP" proto tcp to any port "$RELAY_PORT" comment 'SmartDNS: туннель от входной ноды'
