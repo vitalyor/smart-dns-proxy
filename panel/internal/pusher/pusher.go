@@ -232,6 +232,12 @@ func (c *Client) FetchConnLog(ctx context.Context, t Target, after uint64) ([]by
 	if err != nil {
 		return nil, err
 	}
+	// Ноду, которая про этот маршрут ещё не знает, нельзя показывать как аварию:
+	// так выглядит и точка выхода, и любая нода со старым образом посреди
+	// выката. Отвечаем тем же «недоступно», что вернул бы свежий агент.
+	if code == http.StatusNotFound {
+		return []byte(`{"available":false,"enabled":false,"seq":0,"entries":[]}`), nil
+	}
 	if code != http.StatusOK {
 		return nil, fmt.Errorf("node returned HTTP %d", code)
 	}
