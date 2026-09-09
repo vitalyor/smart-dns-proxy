@@ -70,13 +70,16 @@ func (p *Proxy) Apply(c *model.NodeConfig) {
 	for _, r := range p.routes {
 		prev[r.svc.Slug] = r.pool
 	}
+	// Резолвер собираем из конфига напрямую: directResolver берёт замок на
+	// чтение, а он здесь уже захвачен на запись.
+	res := upstreamResolver(c.DNS.Upstream)
 	routes := make([]svcRoute, 0, len(c.Services))
 	for i := range c.Services {
 		s := &c.Services[i]
 		routes = append(routes, svcRoute{
 			svc:     s,
 			matcher: s.Match.Compile(),
-			pool:    newPool(s.Egress, prev[s.Slug]),
+			pool:    newPool(s.Egress, prev[s.Slug], res),
 		})
 	}
 	p.routes, p.cfg = routes, c
@@ -301,6 +304,17 @@ func (p *Proxy) directResolver() *net.Resolver {
 	if cfg := p.config(); cfg != nil {
 		up = cfg.DNS.Upstream
 	}
+	return upstreamResolver(up)
+}
+
+// upstreamResolver направляет поиск имён в наш собственный unbound вместо
+// системного резолвера хоста. У хостера он один, нередко служебный и не
+// публичный, а на нём висит всё: имя ноды выхода разрешается заново на каждое
+// новое соединение и на каждую проверку здоровья. Стоило ему поперхнуться —
+// и разом умирали все проксируемые сервисы, потому что вход переставал
+// находить, куда идти. Свой unbound ещё и кеширует, так что наружу уходит
+// один запрос на TTL, а не тысячи.
+func upstreamResolver(up string) *net.Resolver {
 	if up == "" {
 		return net.DefaultResolver
 	}

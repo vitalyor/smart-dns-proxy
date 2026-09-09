@@ -1,7 +1,11 @@
 package proxy
 
 import (
+	"context"
+	"crypto/tls"
+	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,7 +75,7 @@ func TestExitLabelHandlesNilTarget(t *testing.T) {
 // nil-соединение и nil-ошибку, вызывающий считал это удачей и писал в пустоту —
 // прокси падал, а вместе с ним ложился весь вход, не только этот сервис.
 func TestDialWithoutTargetsErrors(t *testing.T) {
-	po := newPool(model.EgressPolicy{}, nil)
+	po := newPool(model.EgressPolicy{}, nil, nil)
 	c, tg, err := po.dial(nil, "example.com", 443, time.Second)
 	if err == nil {
 		if c != nil {
@@ -81,5 +85,27 @@ func TestDialWithoutTargetsErrors(t *testing.T) {
 	}
 	if c != nil || tg != nil {
 		t.Fatal("при ошибке ни соединения, ни цели быть не должно")
+	}
+}
+
+// Имена нод выхода обязаны разрешаться нашим резолвером, а не системным.
+// Системный на входе один — служебный резолвер хостера, и он же оказывался
+// единой точкой отказа: каждое новое соединение и каждая проверка здоровья
+// спрашивали у него адрес ноды заново. Он захлёбывался, вход переставал
+// находить выход, и разом умирали все проксируемые сервисы.
+func TestPoolUsesConfiguredResolver(t *testing.T) {
+	dead := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return nil, errors.New("резолвер-заглушка")
+	}}
+	po := newPool(model.EgressPolicy{Targets: []model.EgressTarget{
+		{NodeID: "n1", Name: "egress-test", Endpoint: "relay.invalid:8443", SNI: "relay.invalid"},
+	}}, nil, dead)
+
+	_, _, err := po.dial(&tls.Config{}, "example.com", 443, 2*time.Second)
+	if err == nil {
+		t.Fatal("ожидалась ошибка: подставной резолвер не может разрешить имя")
+	}
+	if !strings.Contains(err.Error(), "резолвер-заглушка") {
+		t.Fatalf("пул не воспользовался переданным резолвером, ошибка: %v", err)
 	}
 }
