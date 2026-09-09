@@ -149,13 +149,24 @@ func (s *Server) compile(ctx context.Context, dryRun bool) (*compiler.Output, st
 		MinAgentVer: "1.0.0",
 		LogLevel:    getSetting(ctx, s.DB, "node_log_level", "info"),
 		DNS:         s.dnsConfig(ctx),
+		// Три секунды на приветствие TLS убивали каждое пятое соединение с
+		// мобильного интернета: телефон открывал TCP, первый пакет терялся, и
+		// повторы по обычной выдержке TCP (1, 3, 7 секунд) не укладывались в
+		// срок. Замер за один выезд: дома 1,5% неполных рукопожатий, на
+		// мобильном 17,9%. Пятнадцать секунд закрывают три повтора; цена —
+		// брошенный сокет живёт дольше, а от наплыва защищает MaxSessions.
+		//
+		// Пять минут простоя рвали всё, что молчит между сообщениями:
+		// управляющее соединение, push, длинные веб-сокеты. Полчаса — обычный
+		// горизонт, после которого соединение всё равно рвёт NAT оператора,
+		// так что первыми обрывать должны не мы.
 		Ingress: model.IngressConfig{
-			ClientHelloTimeoutMs: 3000, MaxPreReadBytes: 16384,
-			DialTimeoutMs: 8000, IdleTimeoutSec: 300, MaxSessions: 10000,
+			ClientHelloTimeoutMs: 15000, MaxPreReadBytes: 16384,
+			DialTimeoutMs: 8000, IdleTimeoutSec: 1800, MaxSessions: 10000,
 		},
 		EgressTuning: model.EgressConfig{
 			Resolver:      getSetting(ctx, s.DB, "egress_resolver", "1.1.1.1:53"),
-			DialTimeoutMs: 8000, IdleTimeoutSec: 300, MaxSessions: 10000,
+			DialTimeoutMs: 8000, IdleTimeoutSec: 1800, MaxSessions: 10000,
 		},
 	}
 	// A node in maintenance or explicitly unhealthy is excluded from new

@@ -126,7 +126,7 @@ func (p *Proxy) settings() model.IngressConfig {
 	defer p.mu.RUnlock()
 	s := p.cfg.Ingress
 	if s.ClientHelloTimeoutMs <= 0 {
-		s.ClientHelloTimeoutMs = 3000
+		s.ClientHelloTimeoutMs = 15000
 	}
 	if s.MaxPreReadBytes <= 0 {
 		s.MaxPreReadBytes = 16384
@@ -135,7 +135,7 @@ func (p *Proxy) settings() model.IngressConfig {
 		s.DialTimeoutMs = 8000
 	}
 	if s.IdleTimeoutSec <= 0 {
-		s.IdleTimeoutSec = 300
+		s.IdleTimeoutSec = 1800
 	}
 	return s
 }
