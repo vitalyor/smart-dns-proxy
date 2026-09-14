@@ -34,10 +34,18 @@ func PeekSNI(r io.Reader, maxBytes int) (serverName string, raw []byte, err erro
 		maxBytes = 16 * 1024
 	}
 	var handshake []byte
+	// A complete SNI in an incomplete handshake is diagnostic metadata only.
+	// Preserve the error so callers never route a truncated ClientHello.
+	defer func() {
+		if err == ErrIncomplete {
+			serverName, _ = parseClientHelloPrefix(handshake, true)
+		}
+	}()
 	for i := 0; i < maxRecords; i++ {
 		hdr := make([]byte, 5)
-		if _, err = io.ReadFull(r, hdr); err != nil {
-			return "", raw, ErrIncomplete
+		n, readErr := io.ReadFull(r, hdr)
+		if readErr != nil {
+			return "", append(raw, hdr[:n]...), ErrIncomplete
 		}
 		if hdr[0] != 0x16 || hdr[1] != 0x03 {
 			return "", append(raw, hdr...), ErrNotTLS
@@ -47,11 +55,12 @@ func PeekSNI(r io.Reader, maxBytes int) (serverName string, raw []byte, err erro
 			return "", append(raw, hdr...), ErrTooLarge
 		}
 		body := make([]byte, length)
-		if _, err = io.ReadFull(r, body); err != nil {
-			return "", append(raw, hdr...), ErrIncomplete
+		n, readErr = io.ReadFull(r, body)
+		raw = append(append(raw, hdr...), body[:n]...)
+		handshake = append(handshake, body[:n]...)
+		if readErr != nil {
+			return "", raw, ErrIncomplete
 		}
-		raw = append(append(raw, hdr...), body...)
-		handshake = append(handshake, body...)
 
 		name, perr := parseClientHello(handshake)
 		if perr == ErrIncomplete {
@@ -63,6 +72,10 @@ func PeekSNI(r io.Reader, maxBytes int) (serverName string, raw []byte, err erro
 }
 
 func parseClientHello(b []byte) (string, error) {
+	return parseClientHelloPrefix(b, false)
+}
+
+func parseClientHelloPrefix(b []byte, partial bool) (string, error) {
 	// handshake header: type(1) length(3). Слишком мало байт — это «данных пока
 	// не хватает», а не «не TLS»: остаток приедет следующей записью.
 	if len(b) > 0 && b[0] != 0x01 {
@@ -74,7 +87,10 @@ func parseClientHello(b []byte) (string, error) {
 	hl := int(b[1])<<16 | int(b[2])<<8 | int(b[3])
 	b = b[4:]
 	if hl > len(b) {
-		return "", ErrIncomplete
+		if !partial {
+			return "", ErrIncomplete
+		}
+		hl = len(b)
 	}
 	b = b[:hl]
 	// version(2) random(32)
@@ -101,7 +117,10 @@ func parseClientHello(b []byte) (string, error) {
 	extLen := int(binary.BigEndian.Uint16(b))
 	b = b[2:]
 	if extLen > len(b) {
-		return "", ErrIncomplete
+		if !partial {
+			return "", ErrIncomplete
+		}
+		extLen = len(b)
 	}
 	b = b[:extLen]
 	for len(b) >= 4 {

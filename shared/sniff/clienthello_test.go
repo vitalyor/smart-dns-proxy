@@ -103,3 +103,33 @@ func TestPeekSNIRespectsByteBudget(t *testing.T) {
 		t.Fatalf("want ErrTooLarge, got %v", err)
 	}
 }
+
+func TestPeekSNIPartialDiagnostics(t *testing.T) {
+	const host = "api.example.com"
+	rec := realClientHello(t, host)
+	nameEnd := bytes.Index(rec, []byte(host)) + len(host)
+	if nameEnd < len(host) {
+		t.Fatal("fixture has no SNI")
+	}
+	for _, splitAt := range []int{0, 2, nameEnd - 8} {
+		wire := rec
+		end := nameEnd
+		if splitAt > 0 {
+			wire = splitRecords(rec, splitAt)
+			end += 5
+		}
+		for cut := 0; cut < len(wire); cut++ {
+			name, raw, err := PeekSNI(bytes.NewReader(wire[:cut]), 16384)
+			if err != ErrIncomplete || !bytes.Equal(raw, wire[:cut]) {
+				t.Fatalf("split=%d cut=%d: err=%v raw=%d", splitAt, cut, err, len(raw))
+			}
+			want := ""
+			if cut >= end {
+				want = host
+			}
+			if name != want {
+				t.Fatalf("split=%d cut=%d: name=%q want=%q", splitAt, cut, name, want)
+			}
+		}
+	}
+}
